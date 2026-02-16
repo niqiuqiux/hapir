@@ -1,0 +1,9 @@
+/target
+/.claude/
+/.idea
+.env
+.env.*
+*.swp
+*.swo
+*~
+.DS_Store

@@ -1,0 +1,29 @@
+[package]
+name = "hapi-cli"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+hapi-shared = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio-tungstenite = { version = "0.28.0", features = ["rustls-tls-native-roots"] }
+futures = "0.3"
+urlencoding = "2"
+dirs-next = "2"
+uuid = { version = "1", features = ["v4"] }
+axum = "0.8"
+atty = "0.2"
+sha2 = "0.10"
+hex = "0.4"
+base64 = "0.22"
+rand = "0.8"
+pin-project-lite = "0.2"
+portable-pty = "0.8"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

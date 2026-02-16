@@ -1,0 +1,101 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use serde_json::Value;
+use tokio::sync::Mutex;
+use tracing::debug;
+
+use crate::agent::session_base::{AgentSessionBase, SessionMode};
+
+/// Claude-specific session extending AgentSessionBase.
+///
+/// Holds Claude-specific fields like env vars, CLI args, MCP server
+/// configuration, and hook settings path.
+pub struct ClaudeSession<Mode: Clone + Send + 'static> {
+    pub base: Arc<AgentSessionBase<Mode>>,
+    pub claude_env_vars: Option<HashMap<String, String>>,
+    pub claude_args: Mutex<Option<Vec<String>>>,
+    pub mcp_servers: HashMap<String, Value>,
+    pub allowed_tools: Option<Vec<String>>,
+    pub hook_settings_path: String,
+    pub started_by: StartedBy,
+    pub starting_mode: SessionMode,
+    pub local_launch_failure: Mutex<Option<LocalLaunchFailure>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StartedBy {
+    Runner,
+    Terminal,
+}
+
+impl StartedBy {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Runner => "runner",
+            Self::Terminal => "terminal",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct LocalLaunchFailure {
+    pub message: String,
+    pub exit_reason: String,
+}
+
+impl<Mode: Clone + Send + 'static> ClaudeSession<Mode> {
+    pub fn record_local_launch_failure(&self, message: String, exit_reason: String) {
+        *self.local_launch_failure.blocking_lock() = Some(LocalLaunchFailure {
+            message,
+            exit_reason,
+        });
+    }
+
+    /// Clear the current session ID (used by /clear command).
+    pub async fn clear_session_id(&self) {
+        *self.base.session_id.lock().await = None;
+        debug!("[Session] Session ID cleared");
+    }
+
+    /// Consume one-time Claude flags from claude_args after Claude spawn.
+    /// Currently handles: --resume (with or without session ID).
+    pub async fn consume_one_time_flags(&self) {
+        let mut args_guard = self.claude_args.lock().await;
+        let args = match args_guard.as_mut() {
+            Some(a) => a,
+            None => return,
+        };
+
+        let mut filtered = Vec::new();
+        let mut i = 0;
+        while i < args.len() {
+            if args[i] == "--resume" {
+                // Check if next arg looks like a UUID
+                if i + 1 < args.len() {
+                    let next = &args[i + 1];
+                    if !next.starts_with('-') && next.contains('-') {
+                        debug!(
+                            "[Session] Consumed --resume flag with session ID: {}",
+                            next
+                        );
+                        i += 2;
+                        continue;
+                    }
+                }
+                debug!("[Session] Consumed --resume flag (no session ID)");
+                i += 1;
+                continue;
+            }
+            filtered.push(args[i].clone());
+            i += 1;
+        }
+
+        if filtered.is_empty() {
+            *args_guard = None;
+        } else {
+            *args_guard = Some(filtered);
+        }
+        debug!("[Session] Consumed one-time flags");
+    }
+}
