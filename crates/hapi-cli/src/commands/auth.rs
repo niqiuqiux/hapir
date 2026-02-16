@@ -96,21 +96,7 @@ fn logout(config: &Configuration) -> anyhow::Result<()> {
 }
 
 fn show_help() {
-    println!(
-        r#"
-hapi auth - Authentication management
-
-Usage:
-  hapi auth status            Show current configuration
-  hapi auth login             Enter and save CLI_API_TOKEN
-  hapi auth logout            Clear saved credentials
-
-Token priority (highest to lowest):
-  1. CLI_API_TOKEN environment variable
-  2. ~/.hapi/settings.json
-  3. Interactive prompt (on first run)
-"#
-    );
+    eprintln!("Unknown auth action. Run 'hapi auth --help' for usage.");
 }
 
 fn hostname() -> String {

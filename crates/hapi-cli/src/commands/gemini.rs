@@ -1,47 +1,29 @@
 use anyhow::Result;
+use clap::Parser;
 use tracing::debug;
 
 use crate::commands::common;
 use crate::config::Configuration;
 
 /// Parsed arguments for the gemini command.
-#[derive(Debug, Default)]
+#[derive(Parser, Debug, Default)]
+#[command(name = "gemini")]
 pub struct GeminiArgs {
+    /// What started this session
+    #[arg(long)]
     pub started_by: Option<String>,
+
+    /// Starting mode for the session
+    #[arg(long)]
     pub hapi_starting_mode: Option<String>,
+
+    /// Bypass permission prompts
+    #[arg(long)]
     pub yolo: bool,
+
+    /// Model to use
+    #[arg(long)]
     pub model: Option<String>,
-}
-
-impl GeminiArgs {
-    pub fn parse_from(args: Vec<String>) -> Self {
-        let mut result = Self::default();
-        let mut iter = args.into_iter();
-
-        while let Some(arg) = iter.next() {
-            match arg.as_str() {
-                "--started-by" => result.started_by = iter.next(),
-                "--hapi-starting-mode" => result.hapi_starting_mode = iter.next(),
-                "--yolo" => result.yolo = true,
-                "--model" => result.model = iter.next(),
-                "--help" | "-h" => {
-                    print_help();
-                    std::process::exit(0);
-                }
-                other => {
-                    if let Some(val) = other.strip_prefix("--started-by=") {
-                        result.started_by = Some(val.to_string());
-                    } else if let Some(val) = other.strip_prefix("--hapi-starting-mode=") {
-                        result.hapi_starting_mode = Some(val.to_string());
-                    } else if let Some(val) = other.strip_prefix("--model=") {
-                        result.model = Some(val.to_string());
-                    }
-                }
-            }
-        }
-
-        result
-    }
 }
 
 /// Run the gemini command.
@@ -56,21 +38,4 @@ pub async fn run(args: GeminiArgs) -> Result<()> {
         .to_string();
 
     crate::modules::gemini::run(&working_directory).await
-}
-
-fn print_help() {
-    eprintln!(
-        r#"hapi gemini - Start a Gemini agent session
-
-Usage:
-  hapi gemini [options]
-
-Options:
-  --started-by <source>          What started this session
-  --hapi-starting-mode <mode>    Starting mode for the session
-  --yolo                         Bypass permission prompts
-  --model <model>                Model to use
-  -h, --help                     Show this help
-"#
-    );
 }

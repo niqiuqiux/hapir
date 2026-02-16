@@ -16,19 +16,7 @@ pub async fn run(action: Option<&str>) -> anyhow::Result<()> {
         Some("logs") => show_logs(&config),
         Some("list") => list(&config).await,
         _ => {
-            println!(
-                r#"
-hapi runner - Runner process management
-
-Usage:
-  hapi runner start           Start runner in background
-  hapi runner start-sync      Start runner synchronously (foreground)
-  hapi runner stop            Stop runner
-  hapi runner status          Show runner status
-  hapi runner logs            Show latest runner logs
-  hapi runner list            List active sessions
-"#
-            );
+            eprintln!("Unknown runner action. Run 'hapi runner --help' for usage.");
             Ok(())
         }
     }

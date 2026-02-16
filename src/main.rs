@@ -1,4 +1,9 @@
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
+
+use hapi_cli::commands::claude::ClaudeArgs;
+use hapi_cli::commands::codex::CodexArgs;
+use hapi_cli::commands::gemini::GeminiArgs;
+use hapi_cli::commands::opencode::OpencodeArgs;
 
 #[derive(Parser)]
 #[command(name = "hapi", about = "Local-first AI agent remote control")]
@@ -14,28 +19,16 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Start a Claude agent session (default)
-    Claude {
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
+    Claude(ClaudeArgs),
 
     /// Start a Codex agent session
-    Codex {
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
+    Codex(CodexArgs),
 
     /// Start a Gemini agent session
-    Gemini {
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
+    Gemini(GeminiArgs),
 
     /// Start an OpenCode agent session
-    Opencode {
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
+    Opencode(OpencodeArgs),
 
     /// Run the MCP stdio bridge
     Mcp {
@@ -94,6 +87,21 @@ enum RunnerAction {
     List,
 }
 
+fn build_cli() -> clap::Command {
+    let (about, subs) = hapi_shared::i18n::cli_about_strings();
+    let mut cmd = Cli::command().about(about);
+    for sub in subs {
+        cmd = cmd.mut_subcommand(sub.name, |c| {
+            let mut c = c.about(sub.about);
+            for (child_name, child_about) in sub.children {
+                c = c.mut_subcommand(child_name, |sc| sc.about(child_about));
+            }
+            c
+        });
+    }
+    cmd
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
@@ -103,48 +111,64 @@ async fn main() {
         )
         .init();
 
-    let cli = Cli::parse();
+    let mut cmd_for_help = build_cli();
+    cmd_for_help.build();
+    let matches = build_cli().get_matches();
+    let cli = Cli::from_arg_matches(&matches).expect("clap derive mismatch");
 
     let result = match cli.command {
-        Some(Commands::Claude { args }) => hapi_cli::run_cli(args).await,
-        Some(Commands::Codex { args }) => {
-            let parsed = hapi_cli::commands::codex::CodexArgs::parse_from(args);
-            hapi_cli::commands::codex::run(parsed).await
-        }
-        Some(Commands::Gemini { args }) => {
-            let parsed = hapi_cli::commands::gemini::GeminiArgs::parse_from(args);
-            hapi_cli::commands::gemini::run(parsed).await
-        }
-        Some(Commands::Opencode { args }) => {
-            let parsed = hapi_cli::commands::opencode::OpencodeArgs::parse_from(args);
-            hapi_cli::commands::opencode::run(parsed).await
-        }
+        Some(Commands::Claude(args)) => hapi_cli::run_cli(args).await,
+        Some(Commands::Codex(args)) => hapi_cli::commands::codex::run(args).await,
+        Some(Commands::Gemini(args)) => hapi_cli::commands::gemini::run(args).await,
+        Some(Commands::Opencode(args)) => hapi_cli::commands::opencode::run(args).await,
         Some(Commands::Mcp { args }) => hapi_cli::commands::mcp::run(args).await,
         Some(Commands::HookForwarder { args }) => {
             hapi_cli::commands::hook_forwarder::run(args).await
         }
         Some(Commands::Hub) => hapi_hub::run_hub().await,
-        Some(Commands::Auth { action }) => {
-            hapi_cli::commands::auth::run(action.map(|a| match a {
+        Some(Commands::Auth { action }) => match action {
+            Some(a) => hapi_cli::commands::auth::run(Some(match a {
                 AuthAction::Status => "status",
                 AuthAction::Login => "login",
                 AuthAction::Logout => "logout",
-            }))
-        }
-        Some(Commands::Runner { action }) => {
-            let sub = action.map(|a| match a {
-                RunnerAction::Start => "start",
-                RunnerAction::StartSync => "start-sync",
-                RunnerAction::Stop => "stop",
-                RunnerAction::Status => "status",
-                RunnerAction::Logs => "logs",
-                RunnerAction::List => "list",
-            });
-            hapi_cli::commands::runner::run(sub).await
-        }
+            })),
+            None => {
+                let _ = cmd_for_help
+                    .find_subcommand_mut("auth")
+                    .expect("auth subcommand")
+                    .print_help();
+                Ok(())
+            }
+        },
+        Some(Commands::Runner { action }) => match action {
+            Some(a) => {
+                let sub = match a {
+                    RunnerAction::Start => "start",
+                    RunnerAction::StartSync => "start-sync",
+                    RunnerAction::Stop => "stop",
+                    RunnerAction::Status => "status",
+                    RunnerAction::Logs => "logs",
+                    RunnerAction::List => "list",
+                };
+                hapi_cli::commands::runner::run(Some(sub)).await
+            }
+            None => {
+                let _ = cmd_for_help
+                    .find_subcommand_mut("runner")
+                    .expect("runner subcommand")
+                    .print_help();
+                Ok(())
+            }
+        },
         Some(Commands::Doctor) => hapi_cli::commands::doctor::run(),
         // No subcommand: default to claude with any trailing args
-        None => hapi_cli::run_cli(cli.args).await,
+        None => {
+            let claude_args = ClaudeArgs::try_parse_from(
+                std::iter::once("hapi".to_string()).chain(cli.args),
+            )
+            .unwrap_or_else(|e| e.exit());
+            hapi_cli::run_cli(claude_args).await
+        }
     };
 
     if let Err(e) = result {

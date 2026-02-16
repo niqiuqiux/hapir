@@ -1,3 +1,4 @@
+pub mod i18n;
 pub mod messages;
 pub mod modes;
 pub mod schemas;

@@ -1,4 +1,5 @@
 use anyhow::{bail, Result};
+use clap::Parser;
 use tracing::{debug, error};
 
 use crate::commands::common;
@@ -58,75 +59,30 @@ pub async fn run(args: ClaudeArgs) -> Result<()> {
 }
 
 /// Parsed arguments for the claude (default) command.
-#[derive(Debug, Default)]
+#[derive(Parser, Debug, Default)]
+#[command(name = "claude")]
 pub struct ClaudeArgs {
+    /// Starting mode for the session
+    #[arg(long)]
     pub hapi_starting_mode: Option<String>,
+
+    /// Bypass permission prompts
+    #[arg(long)]
     pub yolo: bool,
+
+    /// Skip all permission checks (dangerous)
+    #[arg(long)]
     pub dangerously_skip_permissions: bool,
+
+    /// Model to use
+    #[arg(long)]
     pub model: Option<String>,
+
+    /// What started this session
+    #[arg(long)]
     pub started_by: Option<String>,
+
+    /// Extra arguments passed through to claude
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     pub passthrough_args: Vec<String>,
-}
-
-impl ClaudeArgs {
-    /// Parse from raw CLI args (everything after the subcommand, or all args
-    /// when no subcommand is given).
-    pub fn parse_from(args: Vec<String>) -> Self {
-        let mut result = Self::default();
-        let mut iter = args.into_iter();
-
-        while let Some(arg) = iter.next() {
-            match arg.as_str() {
-                "--hapi-starting-mode" => {
-                    result.hapi_starting_mode = iter.next();
-                }
-                "--yolo" => result.yolo = true,
-                "--dangerously-skip-permissions" => {
-                    result.dangerously_skip_permissions = true;
-                }
-                "--model" => {
-                    result.model = iter.next();
-                }
-                "--started-by" => {
-                    result.started_by = iter.next();
-                }
-                "--help" | "-h" => {
-                    print_help();
-                    std::process::exit(0);
-                }
-                other => {
-                    // Check for --key=value forms
-                    if let Some(val) = other.strip_prefix("--hapi-starting-mode=") {
-                        result.hapi_starting_mode = Some(val.to_string());
-                    } else if let Some(val) = other.strip_prefix("--model=") {
-                        result.model = Some(val.to_string());
-                    } else if let Some(val) = other.strip_prefix("--started-by=") {
-                        result.started_by = Some(val.to_string());
-                    } else {
-                        result.passthrough_args.push(other.to_string());
-                    }
-                }
-            }
-        }
-
-        result
-    }
-}
-
-fn print_help() {
-    eprintln!(
-        r#"hapi claude - Start a Claude agent session (default command)
-
-Usage:
-  hapi [claude] [options] [-- <claude-args>...]
-
-Options:
-  --hapi-starting-mode <mode>    Starting mode for the session
-  --yolo                         Bypass permission prompts
-  --dangerously-skip-permissions Skip all permission checks (dangerous)
-  --model <model>                Model to use
-  --started-by <source>          What started this session
-  -h, --help                     Show this help
-"#
-    );
 }
