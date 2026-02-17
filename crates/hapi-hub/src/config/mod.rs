@@ -41,31 +41,31 @@ pub struct Configuration {
 
 impl Configuration {
     pub async fn create() -> Result<Self> {
-        // 1. Resolve data directory: HAPI_HOME env or ~/.hapi
-        let data_dir = if let Ok(home) = std::env::var("HAPI_HOME") {
+        // Resolve data directory: HAPI_HOME env or ~/.hapi
+        let data_dir = if let Ok(home) = std::env::var("HAPIR_HOME") {
             PathBuf::from(home)
         } else {
             let home = dirs_next::home_dir()
                 .ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))?;
-            home.join(".hapi")
+            home.join(".hapir")
         };
         std::fs::create_dir_all(&data_dir)?;
 
-        // 2. Resolve database path: DB_PATH env or {data_dir}/hapi.db
+        // Resolve database path: DB_PATH env or {data_dir}/hapi.db
         let db_path = if let Ok(p) = std::env::var("DB_PATH") {
             PathBuf::from(p)
         } else {
-            data_dir.join("hapi.db")
+            data_dir.join("hapir.db")
         };
 
-        // 3. Settings file path
+        // Settings file path
         let settings_file = settings::settings_file_path(&data_dir);
 
-        // 4. Load server settings (env > file > default)
+        // Load server settings (env > file > default)
         let server_result = server_settings::load_server_settings(&data_dir)?;
         let ss = server_result.settings;
 
-        // 5. Load CLI API token (env > file > generate)
+        // Load CLI API token (env > file > generate)
         let token_result = cli_api_token::get_or_create_cli_api_token(&data_dir)?;
 
         let telegram_enabled = ss.telegram_bot_token.is_some();

@@ -19,6 +19,7 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 sys-locale = "0.3"
+ts-rs = { version = "12", features = ["serde-json-impl"] }
 
 [package]
 name = "hapir"

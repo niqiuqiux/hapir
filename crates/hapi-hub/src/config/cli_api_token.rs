@@ -4,6 +4,7 @@ use anyhow::Result;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use std::path::Path;
+use tracing::warn;
 
 pub struct CliApiTokenResult {
     pub token: String,
@@ -47,12 +48,12 @@ fn is_weak_token(token: &str) -> bool {
 pub fn get_or_create_cli_api_token(data_dir: &Path) -> Result<CliApiTokenResult> {
     let settings_path = settings_file_path(data_dir);
 
-    // 1. Check env
+    // Check env
     if let Ok(env_token) = std::env::var("CLI_API_TOKEN") {
         if !env_token.is_empty() {
             let token = strip_namespace_suffix(&env_token);
             if is_weak_token(&token) {
-                tracing::warn!("CLI_API_TOKEN appears to be weak");
+                warn!("CLI_API_TOKEN appears to be weak");
             }
             // Persist to file if not already saved
             if let Ok(Some(mut settings)) = read_settings(&settings_path) {
@@ -69,7 +70,7 @@ pub fn get_or_create_cli_api_token(data_dir: &Path) -> Result<CliApiTokenResult>
         }
     }
 
-    // 2. Check file
+    // Check file
     if let Ok(Some(settings)) = read_settings(&settings_path) {
         if let Some(ref file_token) = settings.cli_api_token {
             let token = strip_namespace_suffix(file_token);
@@ -81,7 +82,7 @@ pub fn get_or_create_cli_api_token(data_dir: &Path) -> Result<CliApiTokenResult>
         }
     }
 
-    // 3. Generate
+    // Generate
     let token = generate_secure_token();
     if let Ok(Some(mut settings)) = read_settings(&settings_path) {
         settings.cli_api_token = Some(token.clone());
@@ -139,7 +140,7 @@ fn strip_namespace_suffix(token: &str) -> String {
     if let Some(pos) = token.rfind(':') {
         let base = &token[..pos];
         if !base.is_empty() {
-            tracing::warn!("CLI_API_TOKEN includes namespace suffix, stripping it");
+            warn!("CLI_API_TOKEN includes namespace suffix, stripping it");
             return base.to_string();
         }
     }

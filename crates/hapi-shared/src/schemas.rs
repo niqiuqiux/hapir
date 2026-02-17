@@ -2,20 +2,25 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use ts_rs::TS;
 
 use crate::modes::{ModelMode, PermissionMode};
 
 // --- Metadata ---
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
+#[ts(rename_all = "camelCase")]
 pub struct MetadataSummary {
     pub text: String,
     pub updated_at: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
+#[ts(rename_all = "camelCase")]
 pub struct WorktreeMetadata {
     pub base_path: String,
     pub branch: String,
@@ -26,8 +31,10 @@ pub struct WorktreeMetadata {
     pub created_at: Option<f64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
+#[ts(rename_all = "camelCase")]
 pub struct Metadata {
     pub path: String,
     pub host: String,
@@ -82,8 +89,10 @@ pub struct Metadata {
     pub worktree: Option<WorktreeMetadata>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(export)]
+#[ts(rename_all = "lowercase")]
 pub enum StartedBy {
     Runner,
     Terminal,
@@ -91,8 +100,10 @@ pub enum StartedBy {
 
 // --- Agent State ---
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
+#[ts(rename_all = "camelCase")]
 pub struct AgentStateRequest {
     pub tool: String,
     pub arguments: Value,
@@ -100,16 +111,20 @@ pub struct AgentStateRequest {
     pub created_at: Option<f64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(export)]
+#[ts(rename_all = "lowercase")]
 pub enum CompletedRequestStatus {
     Canceled,
     Denied,
     Approved,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export)]
+#[ts(rename_all = "snake_case")]
 pub enum PermissionDecision {
     Approved,
     ApprovedForSession,
@@ -120,20 +135,25 @@ pub enum PermissionDecision {
 // PLACEHOLDER_SCHEMAS_PART2
 
 /// Answers can be flat (Record<string, string[]>) or nested (Record<string, {answers: string[]}>)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(untagged)]
+#[ts(export)]
+#[ts(untagged)]
 pub enum AnswersFormat {
     Flat(HashMap<String, Vec<String>>),
     Nested(HashMap<String, NestedAnswers>),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
 pub struct NestedAnswers {
     pub answers: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
+#[ts(rename_all = "camelCase")]
 pub struct AgentStateCompletedRequest {
     pub tool: String,
     pub arguments: Value,
@@ -154,8 +174,10 @@ pub struct AgentStateCompletedRequest {
     pub answers: Option<AnswersFormat>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
+#[ts(rename_all = "camelCase")]
 pub struct AgentState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub controlled_by_user: Option<bool>,
@@ -167,8 +189,10 @@ pub struct AgentState {
 
 // --- Todo ---
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export)]
+#[ts(rename_all = "snake_case")]
 pub enum TodoStatus {
     Pending,
     InProgress,
@@ -177,15 +201,18 @@ pub enum TodoStatus {
 
 // PLACEHOLDER_SCHEMAS_PART3
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(export)]
+#[ts(rename_all = "lowercase")]
 pub enum TodoPriority {
     High,
     Medium,
     Low,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
 pub struct TodoItem {
     pub content: String,
     pub status: TodoStatus,
@@ -195,8 +222,10 @@ pub struct TodoItem {
 
 // --- Attachment ---
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
+#[ts(rename_all = "camelCase")]
 pub struct AttachmentMetadata {
     pub id: String,
     pub filename: String,
@@ -209,8 +238,10 @@ pub struct AttachmentMetadata {
 
 // --- Message ---
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
+#[ts(rename_all = "camelCase")]
 pub struct DecryptedMessage {
     pub id: String,
     pub seq: Option<f64>,
@@ -221,8 +252,10 @@ pub struct DecryptedMessage {
 
 // --- Session ---
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
+#[ts(rename_all = "camelCase")]
 pub struct Session {
     pub id: String,
     pub namespace: String,
@@ -249,10 +282,13 @@ pub struct Session {
 
 // --- Sync Events ---
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(tag = "type")]
+#[ts(export)]
+#[ts(tag = "type")]
 pub enum SyncEvent {
     #[serde(rename = "session-added")]
+    #[ts(rename = "session-added")]
     SessionAdded {
         #[serde(rename = "sessionId")]
         session_id: String,
@@ -262,6 +298,7 @@ pub enum SyncEvent {
         data: Option<Value>,
     },
     #[serde(rename = "session-updated")]
+    #[ts(rename = "session-updated")]
     SessionUpdated {
         #[serde(rename = "sessionId")]
         session_id: String,
@@ -271,6 +308,7 @@ pub enum SyncEvent {
         data: Option<Value>,
     },
     #[serde(rename = "session-removed")]
+    #[ts(rename = "session-removed")]
     SessionRemoved {
         #[serde(rename = "sessionId")]
         session_id: String,
@@ -278,6 +316,7 @@ pub enum SyncEvent {
         namespace: Option<String>,
     },
     #[serde(rename = "message-received")]
+    #[ts(rename = "message-received")]
     MessageReceived {
         #[serde(rename = "sessionId")]
         session_id: String,
@@ -286,6 +325,7 @@ pub enum SyncEvent {
         message: DecryptedMessage,
     },
     #[serde(rename = "machine-updated")]
+    #[ts(rename = "machine-updated")]
     MachineUpdated {
         #[serde(rename = "machineId")]
         machine_id: String,
@@ -295,12 +335,14 @@ pub enum SyncEvent {
         data: Option<Value>,
     },
     #[serde(rename = "toast")]
+    #[ts(rename = "toast")]
     Toast {
         #[serde(skip_serializing_if = "Option::is_none")]
         namespace: Option<String>,
         data: ToastData,
     },
     #[serde(rename = "connection-changed")]
+    #[ts(rename = "connection-changed")]
     ConnectionChanged {
         #[serde(skip_serializing_if = "Option::is_none")]
         namespace: Option<String>,
@@ -309,8 +351,10 @@ pub enum SyncEvent {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
+#[ts(rename_all = "camelCase")]
 pub struct ToastData {
     pub title: String,
     pub body: String,
@@ -318,8 +362,10 @@ pub struct ToastData {
     pub url: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
+#[ts(rename_all = "camelCase")]
 pub struct ConnectionChangedData {
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]

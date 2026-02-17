@@ -1,37 +1,52 @@
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 // --- Permission Modes ---
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum PermissionMode {
     #[serde(rename = "default")]
+    #[ts(rename = "default")]
     Default,
     #[serde(rename = "acceptEdits")]
+    #[ts(rename = "acceptEdits")]
     AcceptEdits,
     #[serde(rename = "bypassPermissions")]
+    #[ts(rename = "bypassPermissions")]
     BypassPermissions,
     #[serde(rename = "plan")]
+    #[ts(rename = "plan")]
     Plan,
     #[serde(rename = "read-only")]
+    #[ts(rename = "read-only")]
     ReadOnly,
     #[serde(rename = "safe-yolo")]
+    #[ts(rename = "safe-yolo")]
     SafeYolo,
     #[serde(rename = "yolo")]
+    #[ts(rename = "yolo")]
     Yolo,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum ModelMode {
     #[serde(rename = "default")]
+    #[ts(rename = "default")]
     Default,
     #[serde(rename = "sonnet")]
+    #[ts(rename = "sonnet")]
     Sonnet,
     #[serde(rename = "opus")]
+    #[ts(rename = "opus")]
     Opus,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(export)]
+#[ts(rename_all = "lowercase")]
 pub enum AgentFlavor {
     Claude,
     Codex,
@@ -39,8 +54,10 @@ pub enum AgentFlavor {
     Opencode,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(export)]
+#[ts(rename_all = "lowercase")]
 pub enum PermissionModeTone {
     Neutral,
     Info,

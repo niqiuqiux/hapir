@@ -1,10 +1,13 @@
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::modes::ModelMode;
 use crate::schemas::{Session, TodoStatus, WorktreeMetadata};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
+#[ts(rename_all = "camelCase")]
 pub struct SessionSummaryMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -19,20 +22,25 @@ pub struct SessionSummaryMetadata {
     pub worktree: Option<WorktreeMetadata>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
 pub struct SummaryText {
     pub text: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
+#[ts(rename_all = "camelCase")]
 pub struct TodoProgress {
     pub completed: usize,
     pub total: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
+#[ts(rename_all = "camelCase")]
 pub struct SessionSummary {
     pub id: String,
     pub active: bool,

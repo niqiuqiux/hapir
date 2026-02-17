@@ -65,7 +65,7 @@ pub fn load_server_settings(data_dir: &Path) -> Result<ServerSettingsResult> {
     };
 
     // listen_host (with legacy migration from webapp_host)
-    let listen_host = if let Ok(v) = std::env::var("HAPI_LISTEN_HOST") {
+    let listen_host = if let Ok(v) = std::env::var("HAPIR_LISTEN_HOST") {
         if settings.listen_host.is_none() {
             settings.listen_host = Some(v.clone());
             needs_save = true;
@@ -82,10 +82,10 @@ pub fn load_server_settings(data_dir: &Path) -> Result<ServerSettingsResult> {
     };
 
     // listen_port (with legacy migration from webapp_port)
-    let listen_port = if let Ok(v) = std::env::var("HAPI_LISTEN_PORT") {
+    let listen_port = if let Ok(v) = std::env::var("HAPIR_LISTEN_PORT") {
         let port: u16 = v
             .parse()
-            .map_err(|_| anyhow::anyhow!("HAPI_LISTEN_PORT must be a valid port"))?;
+            .map_err(|_| anyhow::anyhow!("HAPIR_LISTEN_PORT must be a valid port"))?;
         if settings.listen_port.is_none() {
             settings.listen_port = Some(port);
             needs_save = true;
@@ -103,7 +103,7 @@ pub fn load_server_settings(data_dir: &Path) -> Result<ServerSettingsResult> {
     };
 
     // public_url (with legacy migration from webapp_url)
-    let public_url = if let Ok(v) = std::env::var("HAPI_PUBLIC_URL") {
+    let public_url = if let Ok(v) = std::env::var("HAPIR_PUBLIC_URL") {
         if settings.public_url.is_none() {
             settings.public_url = Some(v.clone());
             needs_save = true;

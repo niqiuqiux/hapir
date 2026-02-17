@@ -1,5 +1,5 @@
+# Rust & IDE
 /target
-/.claude/
 /.idea
 .env
 .env.*
@@ -7,3 +7,17 @@
 *.swo
 *~
 .DS_Store
+
+# AI
+/.claude/
+CLAUDE.md
+/.kiro
+/.cursor
+/.copilot
+/.trae
+/.opencode
+
+/crates/hapi-shared/bindings/
+/web/node_modules/
+/web/dist/
+/cli/
