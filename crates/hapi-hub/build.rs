@@ -78,7 +78,6 @@ fn main() {
     let workspace_root = Path::new(&manifest_dir).parent().unwrap().parent().unwrap();
     let web_dir = workspace_root.join("web");
     let web_dist = web_dir.join("dist");
-    let hapi_ts_root = workspace_root.parent().unwrap().join("hapi-ts");
 
     // generate TS types
     let shared_src = workspace_root.join("crates/hapi-shared/src");
@@ -92,68 +91,65 @@ fn main() {
         return;
     }
 
-    // Rerun if the TS source changes
-    let hapi_ts_web_src = hapi_ts_root.join("web/src");
-    let hapi_ts_web_pkg = hapi_ts_root.join("web/package.json");
-    println!("cargo:rerun-if-changed={}", hapi_ts_web_src.display());
-    println!("cargo:rerun-if-changed={}", hapi_ts_web_pkg.display());
+    // Rerun if the web source changes
+    let web_src = web_dir.join("src");
+    let web_pkg = web_dir.join("package.json");
+    println!("cargo:rerun-if-changed={}", web_src.display());
+    println!("cargo:rerun-if-changed={}", web_pkg.display());
 
-    if !hapi_ts_root.join("web/package.json").exists() {
+    if !web_pkg.exists() {
         println!(
-            "cargo:warning=hapi-ts project not found at {}. Skipping frontend build.",
-            hapi_ts_root.display()
+            "cargo:warning=web/package.json not found at {}. Skipping frontend build.",
+            web_pkg.display()
         );
         return;
     }
 
-    // Run bun install + build in hapi-ts root
+    // Build frontend from local web/ directory
     println!(
         "cargo:warning=Building frontend from {} ...",
-        hapi_ts_root.display()
+        web_dir.display()
     );
 
-    let status = Command::new("bun")
+    let bun = find_bun();
+
+    let status = Command::new(&bun)
         .args(["install"])
-        .current_dir(&hapi_ts_root)
+        .current_dir(&web_dir)
         .status()
         .expect("Failed to run `bun install`. Is bun installed?");
     if !status.success() {
         panic!("bun install failed");
     }
 
-    let status = Command::new("bun")
-        .args(["run", "build:web"])
-        .current_dir(&hapi_ts_root)
+    let status = Command::new(&bun)
+        .args(["run", "build"])
+        .current_dir(&web_dir)
         .status()
-        .expect("Failed to run `bun run build:web`");
+        .expect("Failed to run `bun run build`");
     if !status.success() {
-        panic!("bun run build:web failed");
+        panic!("bun run build failed");
     }
 
-    // Copy dist output to workspace web/dist
-    let src_dist = hapi_ts_root.join("web/dist");
-    if !src_dist.exists() {
+    if !web_dist.exists() {
         panic!(
             "Frontend build produced no output at {}",
-            src_dist.display()
+            web_dist.display()
         );
     }
-
-    fs::create_dir_all(&web_dist).ok();
-    copy_dir_recursive(&src_dist, &web_dist).expect("Failed to copy web/dist");
 }
 
-fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
-    fs::create_dir_all(dst)?;
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let ty = entry.file_type()?;
-        let dst_path = dst.join(entry.file_name());
-        if ty.is_dir() {
-            copy_dir_recursive(&entry.path(), &dst_path)?;
-        } else {
-            fs::copy(entry.path(), &dst_path)?;
+/// Locate the `bun` binary. Cargo build scripts may run with a minimal PATH,
+/// so we also check common install locations.
+fn find_bun() -> String {
+    if Command::new("bun").arg("--version").output().is_ok() {
+        return "bun".into();
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        let candidate = format!("{home}/.bun/bin/bun");
+        if Path::new(&candidate).exists() {
+            return candidate;
         }
     }
-    Ok(())
+    panic!("Cannot find `bun`. Install it from https://bun.sh or add it to PATH.");
 }
