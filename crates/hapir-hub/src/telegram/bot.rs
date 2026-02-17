@@ -119,11 +119,19 @@ impl HappyBot {
                             continue;
                         };
 
-                        let (chat_id, message_id) = cq
+                        let (chat_id, message_id) = match cq
                             .message
                             .as_ref()
                             .map(|m| (m.chat.id, m.message_id))
-                            .unwrap_or((0, 0));
+                        {
+                            Some(pair) => pair,
+                            None => {
+                                let _ = api
+                                    .answer_callback_query(&cq.id, Some("Message expired"))
+                                    .await;
+                                continue;
+                            }
+                        };
 
                         handle_callback(
                             data,
@@ -148,9 +156,11 @@ impl HappyBot {
 
     fn get_bound_chat_ids(&self, namespace: &str) -> Vec<i64> {
         let conn = self.store.conn();
+        let mut seen = std::collections::HashSet::new();
         users::get_users_by_platform_and_namespace(&conn, "telegram", namespace)
             .iter()
             .filter_map(|u| u.platform_user_id.parse::<i64>().ok())
+            .filter(|id| seen.insert(*id))
             .collect()
     }
 }

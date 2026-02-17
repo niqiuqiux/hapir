@@ -78,6 +78,21 @@ async fn spawn_machine(
     }
 
     let agent = body.agent.as_deref().unwrap_or("claude");
+    if !matches!(agent, "claude" | "codex" | "gemini" | "opencode") {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Invalid agent"})),
+        );
+    }
+    if let Some(ref st) = body.session_type {
+        if !matches!(st.as_str(), "simple" | "worktree") {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": "Invalid sessionType"})),
+            );
+        }
+    }
+
     let result = engine
         .spawn_session(
             &machine_id,

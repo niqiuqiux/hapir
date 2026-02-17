@@ -6,15 +6,18 @@ pub mod terminal_registry;
 use std::sync::Arc;
 
 use axum::{
-    Router,
-    extract::{Query, State, WebSocketUpgrade, ws::{Message, WebSocket}},
+    extract::{
+        ws::{Message, WebSocket}, Query, State,
+        WebSocketUpgrade,
+    },
     response::IntoResponse,
+    Router,
 };
 use futures::{SinkExt, StreamExt};
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::{Mutex, RwLock};
-use tracing::debug;
+use tracing::{debug, info, warn};
 
 use crate::config::cli_api_token;
 use crate::store::Store;
@@ -52,6 +55,11 @@ struct WsCliQuery {
     session_id: Option<String>,
     #[serde(rename = "machineId")]
     machine_id: Option<String>,
+    /// CLI client sends clientType + scopeId instead of sessionId/machineId
+    #[serde(rename = "clientType")]
+    client_type: Option<String>,
+    #[serde(rename = "scopeId")]
+    scope_id: Option<String>,
 }
 
 async fn ws_cli_upgrade(
@@ -67,12 +75,28 @@ async fn ws_cli_upgrade(
             p.namespace.clone()
         }
         _ => {
+            warn!(
+                machine_id = ?query.machine_id,
+                session_id = ?query.session_id,
+                "CLI WebSocket 认证失败 (token 无效)"
+            );
             return axum::http::StatusCode::UNAUTHORIZED.into_response();
         }
     };
 
+    // Resolve session_id/machine_id from clientType+scopeId if not provided directly
+    let (session_id, machine_id) = match (query.session_id, query.machine_id) {
+        (s @ Some(_), m) => (s, m),
+        (None, m @ Some(_)) => (None, m),
+        (None, None) => match (query.client_type.as_deref(), query.scope_id) {
+            (Some("session-scoped"), Some(id)) => (Some(id), None),
+            (Some("machine-scoped"), Some(id)) => (None, Some(id)),
+            _ => (None, None),
+        },
+    };
+
     ws.on_upgrade(move |socket| {
-        handle_cli_ws(socket, state, namespace, query.session_id, query.machine_id)
+        handle_cli_ws(socket, state, namespace, session_id, machine_id)
     })
     .into_response()
 }
@@ -95,10 +119,8 @@ async fn ws_terminal_upgrade(
         None => return axum::http::StatusCode::UNAUTHORIZED.into_response(),
     };
 
-    ws.on_upgrade(move |socket| {
-        handle_terminal_ws(socket, state, claims.namespace)
-    })
-    .into_response()
+    ws.on_upgrade(move |socket| handle_terminal_ws(socket, state, claims.namespace))
+        .into_response()
 }
 
 struct JwtClaims {
@@ -116,11 +138,7 @@ fn verify_jwt(token: &str, secret: &[u8]) -> Option<JwtClaims> {
     let mut validation = Validation::new(Algorithm::HS256);
     validation.required_spec_claims.clear();
 
-    let data = decode::<Claims>(
-        token,
-        &DecodingKey::from_secret(secret),
-        &validation,
-    ).ok()?;
+    let data = decode::<Claims>(token, &DecodingKey::from_secret(secret), &validation).ok()?;
 
     Some(JwtClaims {
         namespace: data.claims.ns,
@@ -157,7 +175,16 @@ async fn handle_cli_ws(
         state.conn_mgr.join_machine(&conn_id, mid).await;
     }
 
-    debug!(conn_id = %conn_id, namespace = %namespace, "CLI WebSocket connected");
+    if machine_id.is_some() {
+        info!(
+            conn_id = %conn_id,
+            namespace = %namespace,
+            machine_id = ?machine_id,
+            "Runner WebSocket 已连接"
+        );
+    } else {
+        debug!(conn_id = %conn_id, namespace = %namespace, session_id = ?session_id, "CLI WebSocket connected");
+    }
 
     // Outgoing message pump
     let _conn_id_out = conn_id.clone();
@@ -228,7 +255,9 @@ async fn handle_cli_ws(
             &state.sync_engine,
             &state.store,
             &state.conn_mgr,
-        ).await;
+            &state.terminal_registry,
+        )
+        .await;
 
         // Send ack if this was a request
         if let Some(rid) = request_id {
@@ -242,17 +271,20 @@ async fn handle_cli_ws(
     }
 
     // Cleanup
-    debug!(conn_id = %conn_id, "CLI WebSocket disconnected");
-    handlers::terminal::cleanup_cli_disconnect(&conn_id, &state.conn_mgr, &state.terminal_registry).await;
+    if let Some(ref mid) = machine_id {
+        info!(conn_id = %conn_id, machine_id = %mid, "Runner WebSocket 已断开");
+        // Mark machine offline immediately on disconnect
+        state.sync_engine.lock().await.mark_machine_offline(mid);
+    } else {
+        debug!(conn_id = %conn_id, "CLI WebSocket disconnected");
+    }
+    handlers::terminal::cleanup_cli_disconnect(&conn_id, &state.conn_mgr, &state.terminal_registry)
+        .await;
     state.conn_mgr.remove_connection(&conn_id).await;
     out_task.abort();
 }
 
-async fn handle_terminal_ws(
-    socket: WebSocket,
-    state: WsState,
-    namespace: String,
-) {
+async fn handle_terminal_ws(socket: WebSocket, state: WsState, namespace: String) {
     let conn_id = uuid::Uuid::new_v4().to_string();
     let (mut ws_tx, mut ws_rx) = socket.split();
     let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel::<WsOutMessage>();
@@ -333,7 +365,8 @@ async fn handle_terminal_ws(
             &state.terminal_registry,
             state.max_terminals_per_socket,
             state.max_terminals_per_session,
-        ).await;
+        )
+        .await;
 
         if let Some(rid) = request_id {
             let ack = serde_json::json!({
@@ -346,7 +379,12 @@ async fn handle_terminal_ws(
     }
 
     debug!(conn_id = %conn_id, "Terminal WebSocket disconnected");
-    handlers::terminal::cleanup_terminal_disconnect(&conn_id, &state.conn_mgr, &state.terminal_registry).await;
+    handlers::terminal::cleanup_terminal_disconnect(
+        &conn_id,
+        &state.conn_mgr,
+        &state.terminal_registry,
+    )
+    .await;
     state.conn_mgr.remove_connection(&conn_id).await;
     out_task.abort();
 }

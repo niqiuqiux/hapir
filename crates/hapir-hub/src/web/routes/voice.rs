@@ -13,6 +13,8 @@ use crate::web::AppState;
 static AGENT_ID_CACHE: LazyLock<Mutex<HashMap<String, String>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
+static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
+
 pub fn router() -> Router<AppState> {
     Router::new().route("/voice/token", post(voice_token))
 }
@@ -74,7 +76,18 @@ async fn create_agent(client: &reqwest::Client, api_key: &str) -> Option<String>
         .ok()?;
 
     if !resp.status().is_success() {
-        tracing::error!("[Voice] Failed to create agent: {}", resp.status());
+        let status = resp.status();
+        let error_data: Value = resp.json().await.unwrap_or_default();
+        // Match TS: detail can be a string or { message: string }
+        let error_message = error_data
+            .get("detail")
+            .and_then(|d| {
+                d.as_str()
+                    .map(|s| s.to_string())
+                    .or_else(|| d.get("message").and_then(|m| m.as_str()).map(|s| s.to_string()))
+            })
+            .unwrap_or_else(|| format!("API error: {status}"));
+        tracing::error!("[Voice] Failed to create agent: {error_message}");
         return None;
     }
 
@@ -134,7 +147,7 @@ async fn voice_token(
         }
     };
 
-    let client = reqwest::Client::new();
+    let client = &*HTTP_CLIENT;
 
     let mut agent_id = req
         .custom_agent_id
@@ -142,7 +155,7 @@ async fn voice_token(
         .filter(|s| !s.is_empty());
 
     if agent_id.is_none() {
-        agent_id = get_or_create_agent_id(&client, &api_key).await;
+        agent_id = get_or_create_agent_id(client, &api_key).await;
         if agent_id.is_none() {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,

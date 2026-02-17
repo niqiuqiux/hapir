@@ -1,17 +1,26 @@
-pub mod types;
-pub mod sessions;
 pub mod machines;
 pub mod messages;
-pub mod users;
 pub mod push_subscriptions;
+pub mod sessions;
+pub mod types;
+pub mod users;
 pub mod versioned_updates;
 
 use anyhow::{Context, Result};
 use rusqlite::Connection;
+use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 use tracing::{debug, info, warn};
 
 const SCHEMA_VERSION: i64 = 3;
+
+const REQUIRED_TABLES: &[&str] = &[
+    "sessions",
+    "machines",
+    "messages",
+    "users",
+    "push_subscriptions",
+];
 
 pub struct Store {
     conn: Mutex<Connection>,
@@ -19,10 +28,36 @@ pub struct Store {
 
 impl Store {
     pub fn new(path: &str) -> Result<Self> {
-        let conn = Connection::open(path)
-            .with_context(|| format!("failed to open database at {path}"))?;
+        // Set directory and file permissions (matching TS behavior)
+        let db_path = Path::new(path);
+        if let Some(dir) = db_path.parent() {
+            std::fs::create_dir_all(dir).with_context(|| {
+                format!("failed to create database directory {}", dir.display())
+            })?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
+            }
+        }
 
-        let store = Self { conn: Mutex::new(conn) };
+        let conn =
+            Connection::open(path).with_context(|| format!("failed to open database at {path}"))?;
+
+        // Set file permissions on DB and WAL/SHM files
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for suffix in &["", "-wal", "-shm"] {
+                let file_path = format!("{path}{suffix}");
+                let _ =
+                    std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(0o600));
+            }
+        }
+
+        let store = Self {
+            conn: Mutex::new(conn),
+        };
         store.configure_pragmas()?;
         store.initialize_schema()?;
 
@@ -30,10 +65,11 @@ impl Store {
     }
 
     pub fn new_in_memory() -> Result<Self> {
-        let conn = Connection::open_in_memory()
-            .context("failed to open in-memory database")?;
+        let conn = Connection::open_in_memory().context("failed to open in-memory database")?;
 
-        let store = Self { conn: Mutex::new(conn) };
+        let store = Self {
+            conn: Mutex::new(conn),
+        };
         store.configure_pragmas()?;
         store.initialize_schema()?;
 
@@ -45,12 +81,16 @@ impl Store {
     }
 
     fn configure_pragmas(&self) -> Result<()> {
-        self.conn.lock().unwrap().execute_batch(
-            "PRAGMA journal_mode = WAL;
+        self.conn
+            .lock()
+            .unwrap()
+            .execute_batch(
+                "PRAGMA journal_mode = WAL;
              PRAGMA synchronous = NORMAL;
              PRAGMA foreign_keys = ON;
              PRAGMA busy_timeout = 5000;",
-        ).context("failed to configure database pragmas")?;
+            )
+            .context("failed to configure database pragmas")?;
 
         debug!("database pragmas configured");
         Ok(())
@@ -58,14 +98,18 @@ impl Store {
 
     fn get_schema_version(&self) -> Result<i64> {
         let version: i64 = self
-            .conn.lock().unwrap()
+            .conn
+            .lock()
+            .unwrap()
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .context("failed to read schema version")?;
         Ok(version)
     }
 
     fn set_schema_version(&self, version: i64) -> Result<()> {
-        self.conn.lock().unwrap()
+        self.conn
+            .lock()
+            .unwrap()
             .pragma_update(None, "user_version", version)
             .context("failed to set schema version")?;
         Ok(())
@@ -73,7 +117,11 @@ impl Store {
 
     fn initialize_schema(&self) -> Result<()> {
         let current_version = self.get_schema_version()?;
-        info!(current_version, target_version = SCHEMA_VERSION, "checking schema version");
+        info!(
+            current_version,
+            target_version = SCHEMA_VERSION,
+            "checking schema version"
+        );
 
         if current_version == 0 {
             self.create_tables()?;
@@ -86,12 +134,40 @@ impl Store {
             self.migrate_schema(current_version)?;
         }
 
+        self.assert_required_tables()?;
+
+        Ok(())
+    }
+
+    fn assert_required_tables(&self) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?1")
+            .context("failed to prepare table check query")?;
+
+        let missing: Vec<&str> = REQUIRED_TABLES
+            .iter()
+            .filter(|&&table| !stmt.exists(rusqlite::params![table]).unwrap_or(false))
+            .copied()
+            .collect();
+
+        if !missing.is_empty() {
+            anyhow::bail!(
+                "SQLite schema is missing required tables ({}). \
+                 Back up and rebuild the database, or run an offline migration to the expected schema version.",
+                missing.join(", ")
+            );
+        }
+
         Ok(())
     }
 
     fn create_tables(&self) -> Result<()> {
-        self.conn.lock().unwrap().execute_batch(
-            "CREATE TABLE IF NOT EXISTS sessions (
+        self.conn
+            .lock()
+            .unwrap()
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,
                 tag TEXT,
                 namespace TEXT NOT NULL DEFAULT 'default',
@@ -136,7 +212,8 @@ impl Store {
                 FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, seq);",
-        ).context("failed to create tables (part 1)")?;
+            )
+            .context("failed to create tables (part 1)")?;
 
         self.conn.lock().unwrap().execute_batch(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_local_id
@@ -175,8 +252,10 @@ impl Store {
             info!(from = version, to = version + 1, "migrating schema");
 
             match version {
-                1 => self.migrate_v1_to_v2()?,
-                2 => self.migrate_v2_to_v3()?,
+                // 该项目是对hapi的翻译
+                // 不需要兼任旧版本hapi的迁移了，直接升到最新版本就行
+                // 1 => self.migrate_v1_to_v2()?,
+                // 2 => self.migrate_v2_to_v3()?,
                 _ => {
                     warn!(version, "unknown schema version, skipping");
                 }
@@ -187,20 +266,6 @@ impl Store {
         }
 
         info!(version = SCHEMA_VERSION, "schema migration complete");
-        Ok(())
-    }
-
-    fn migrate_v1_to_v2(&self) -> Result<()> {
-        self.conn.lock().unwrap().execute_batch(
-            "ALTER TABLE machines RENAME COLUMN daemon_state TO runner_state;
-             ALTER TABLE machines RENAME COLUMN daemon_state_version TO runner_state_version;",
-        ).context("failed to migrate v1 to v2: rename daemon_state to runner_state")?;
-        Ok(())
-    }
-
-    fn migrate_v2_to_v3(&self) -> Result<()> {
-        // No-op migration
-        debug!("v2 to v3 migration: no-op");
         Ok(())
     }
 }
@@ -267,11 +332,17 @@ mod tests {
 
         let new_meta = json!({"path": "/tmp/new", "host": "h"});
         let result = sessions::update_session_metadata(conn, &s.id, &new_meta, 1, "default", true);
-        assert!(matches!(result, types::VersionedUpdateResult::Success { version: 2, .. }));
+        assert!(matches!(
+            result,
+            types::VersionedUpdateResult::Success { version: 2, .. }
+        ));
 
         // Wrong version → mismatch
         let result2 = sessions::update_session_metadata(conn, &s.id, &new_meta, 1, "default", true);
-        assert!(matches!(result2, types::VersionedUpdateResult::VersionMismatch { version: 2, .. }));
+        assert!(matches!(
+            result2,
+            types::VersionedUpdateResult::VersionMismatch { version: 2, .. }
+        ));
     }
 
     #[test]
@@ -280,11 +351,16 @@ mod tests {
         let conn = &store.conn();
         let meta = json!({"path": "/tmp", "host": "h"});
         let state = json!({"controlledByUser": true});
-        let s = sessions::get_or_create_session(conn, "t1", &meta, Some(&state), "default").unwrap();
+        let s =
+            sessions::get_or_create_session(conn, "t1", &meta, Some(&state), "default").unwrap();
 
         let new_state = json!({"controlledByUser": false});
-        let result = sessions::update_session_agent_state(conn, &s.id, Some(&new_state), 1, "default");
-        assert!(matches!(result, types::VersionedUpdateResult::Success { version: 2, .. }));
+        let result =
+            sessions::update_session_agent_state(conn, &s.id, Some(&new_state), 1, "default");
+        assert!(matches!(
+            result,
+            types::VersionedUpdateResult::Success { version: 2, .. }
+        ));
     }
 
     #[test]
@@ -294,12 +370,25 @@ mod tests {
         let meta = json!({"path": "/tmp", "host": "h"});
         let s = sessions::get_or_create_session(conn, "t1", &meta, None, "default").unwrap();
 
-        let todos = json!([{"content": "fix bug", "status": "pending", "priority": "high", "id": "t1"}]);
-        assert!(sessions::set_session_todos(conn, &s.id, Some(&todos), 1000, "default"));
+        let todos =
+            json!([{"content": "fix bug", "status": "pending", "priority": "high", "id": "t1"}]);
+        assert!(sessions::set_session_todos(
+            conn,
+            &s.id,
+            Some(&todos),
+            1000,
+            "default"
+        ));
 
         // Older timestamp should not overwrite
         let todos2 = json!([]);
-        assert!(!sessions::set_session_todos(conn, &s.id, Some(&todos2), 500, "default"));
+        assert!(!sessions::set_session_todos(
+            conn,
+            &s.id,
+            Some(&todos2),
+            500,
+            "default"
+        ));
     }
 
     #[test]
@@ -322,7 +411,10 @@ mod tests {
 
         // List
         assert_eq!(machines::get_machines(conn).len(), 1);
-        assert_eq!(machines::get_machines_by_namespace(conn, "default").len(), 1);
+        assert_eq!(
+            machines::get_machines_by_namespace(conn, "default").len(),
+            1
+        );
     }
 
     #[test]
@@ -335,7 +427,10 @@ mod tests {
 
         let state = json!({"pid": 1234});
         let result = machines::update_machine_runner_state(conn, "m1", Some(&state), 1, "default");
-        assert!(matches!(result, types::VersionedUpdateResult::Success { .. }));
+        assert!(matches!(
+            result,
+            types::VersionedUpdateResult::Success { .. }
+        ));
 
         let m2 = machines::get_machine(conn, "m1").unwrap();
         assert!(m2.active);
@@ -349,15 +444,33 @@ mod tests {
         let meta = json!({"path": "/tmp", "host": "h"});
         let s = sessions::get_or_create_session(conn, "t1", &meta, None, "default").unwrap();
 
-        let msg1 = messages::add_message(conn, &s.id, &json!({"role": "user", "content": "hi"}), Some("l1")).unwrap();
+        let msg1 = messages::add_message(
+            conn,
+            &s.id,
+            &json!({"role": "user", "content": "hi"}),
+            Some("l1"),
+        )
+        .unwrap();
         assert_eq!(msg1.seq, 1);
         assert_eq!(msg1.local_id.as_deref(), Some("l1"));
 
         // Idempotent by local_id
-        let msg1b = messages::add_message(conn, &s.id, &json!({"role": "user", "content": "hi"}), Some("l1")).unwrap();
+        let msg1b = messages::add_message(
+            conn,
+            &s.id,
+            &json!({"role": "user", "content": "hi"}),
+            Some("l1"),
+        )
+        .unwrap();
         assert_eq!(msg1.id, msg1b.id);
 
-        let msg2 = messages::add_message(conn, &s.id, &json!({"role": "assistant", "content": "hello"}), None).unwrap();
+        let msg2 = messages::add_message(
+            conn,
+            &s.id,
+            &json!({"role": "assistant", "content": "hello"}),
+            None,
+        )
+        .unwrap();
         assert_eq!(msg2.seq, 2);
 
         // Get messages
@@ -394,7 +507,10 @@ mod tests {
 
         // List
         assert_eq!(users::get_users_by_platform(conn, "telegram").len(), 1);
-        assert_eq!(users::get_users_by_platform_and_namespace(conn, "telegram", "default").len(), 1);
+        assert_eq!(
+            users::get_users_by_platform_and_namespace(conn, "telegram", "default").len(),
+            1
+        );
 
         // Remove
         assert!(users::remove_user(conn, "telegram", "123"));
@@ -430,6 +546,8 @@ mod tests {
 
         // Remove
         push_subscriptions::remove_push_subscription(conn, "default", "https://push.example.com/1");
-        assert!(push_subscriptions::get_push_subscriptions_by_namespace(conn, "default").is_empty());
+        assert!(
+            push_subscriptions::get_push_subscriptions_by_namespace(conn, "default").is_empty()
+        );
     }
 }

@@ -4,6 +4,7 @@ use std::process::Stdio;
 use anyhow::{bail, Context, Result};
 use tracing::{debug, info, warn};
 
+use crate::agent::session_factory::build_machine_metadata;
 use crate::api::ApiClient;
 use crate::config::Configuration;
 use crate::persistence;
@@ -27,7 +28,9 @@ pub fn initialize_token(config: &mut Configuration) -> Result<()> {
     }
 
     eprintln!("No API token found. Please enter your CLI_API_TOKEN.");
-    eprintln!("(You can find it in the hub server startup logs or ~/.hapi/settings.json on the server)");
+    eprintln!(
+        "(You can find it in the hub server startup logs or ~/.hapi/settings.json on the server)"
+    );
     eprint!("CLI_API_TOKEN: ");
     io::stderr().flush()?;
 
@@ -54,6 +57,15 @@ pub fn initialize_token(config: &mut Configuration) -> Result<()> {
 
 /// Register (or confirm) the machine with the hub API. Returns the machine_id.
 pub async fn auth_and_setup_machine(config: &Configuration) -> Result<String> {
+    auth_and_setup_machine_with_state(config, None).await
+}
+
+/// Register (or confirm) the machine with the hub API, optionally sending
+/// initial runner state. Returns the machine_id.
+pub async fn auth_and_setup_machine_with_state(
+    config: &Configuration,
+    runner_state: Option<&serde_json::Value>,
+) -> Result<String> {
     let api = ApiClient::new(config)?;
     let settings = persistence::read_settings(&config.settings_file)?;
 
@@ -68,9 +80,14 @@ pub async fn auth_and_setup_machine(config: &Configuration) -> Result<String> {
     };
 
     info!(machine_id = %machine_id, "registering machine");
-    api.get_or_create_machine(&machine_id, &serde_json::json!({}), None)
-        .await
-        .context("failed to register machine with hub")?;
+    let machine_meta = build_machine_metadata(config);
+    api.get_or_create_machine(
+        &machine_id,
+        &serde_json::to_value(&machine_meta).unwrap_or(serde_json::json!({})),
+        runner_state,
+    )
+    .await
+    .context("failed to register machine with hub")?;
 
     // Mark confirmed
     persistence::update_settings(&config.settings_file, |s| {
@@ -82,11 +99,9 @@ pub async fn auth_and_setup_machine(config: &Configuration) -> Result<String> {
 
 /// Ensure the runner process is alive, auto-starting it if needed.
 pub async fn ensure_runner(config: &Configuration) -> Result<Option<u16>> {
-    if let Some(port) = control_client::check_runner_alive(
-        &config.runner_state_file,
-        &config.runner_lock_file,
-    )
-    .await
+    if let Some(port) =
+        control_client::check_runner_alive(&config.runner_state_file, &config.runner_lock_file)
+            .await
     {
         debug!(port, "runner already running");
         return Ok(Some(port));
@@ -109,11 +124,9 @@ pub async fn ensure_runner(config: &Configuration) -> Result<Option<u16>> {
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
     // Re-check if it came up
-    if let Some(port) = control_client::check_runner_alive(
-        &config.runner_state_file,
-        &config.runner_lock_file,
-    )
-    .await
+    if let Some(port) =
+        control_client::check_runner_alive(&config.runner_state_file, &config.runner_lock_file)
+            .await
     {
         info!(port, "runner auto-started successfully");
         return Ok(Some(port));
@@ -158,6 +171,7 @@ pub fn spawn_runner_background() -> Result<()> {
         }
     }
 
-    cmd.spawn().context("failed to spawn runner background process")?;
+    cmd.spawn()
+        .context("failed to spawn runner background process")?;
     Ok(())
 }

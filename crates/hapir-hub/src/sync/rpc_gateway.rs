@@ -111,9 +111,13 @@ impl RpcGateway {
             .rpc_call(method, params)
             .ok_or_else(|| anyhow::anyhow!("RPC handler not registered: {method}"))?;
 
-        rx.await
+        let result = tokio::time::timeout(std::time::Duration::from_secs(30), rx)
+            .await
+            .map_err(|_| anyhow::anyhow!("RPC call timed out: {method}"))?
             .map_err(|_| anyhow::anyhow!("RPC call cancelled"))?
-            .map_err(|e| anyhow::anyhow!("RPC error: {e}"))
+            .map_err(|e| anyhow::anyhow!("RPC error: {e}"))?;
+
+        Ok(result)
     }
 
     // --- Permission ---

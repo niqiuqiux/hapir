@@ -2,10 +2,12 @@ use axum::{
     extract::{Request, State},
     http::StatusCode,
     middleware::Next,
-    response::Response,
+    response::{IntoResponse, Response},
+    Json,
 };
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 use crate::web::AppState;
 
@@ -28,7 +30,7 @@ pub async fn jwt_auth(
     State(state): State<AppState>,
     mut req: Request,
     next: Next,
-) -> Result<Response, StatusCode> {
+) -> Result<Response, Response> {
     let path = req.uri().path();
 
     // Skip JWT auth for non-API routes and public API endpoints
@@ -36,18 +38,31 @@ pub async fn jwt_auth(
         return Ok(next.run(req).await);
     }
 
-    let token = extract_bearer_token(&req).or_else(|| extract_query_token(&req));
+    let token = extract_bearer_token(&req).or_else(|| {
+        // Only allow query param token for /api/events
+        if path == "/api/events" {
+            extract_query_token(&req)
+        } else {
+            None
+        }
+    });
 
     let token = match token {
         Some(t) => t,
-        None => return Err(StatusCode::UNAUTHORIZED),
+        None => {
+            return Err((StatusCode::UNAUTHORIZED, Json(json!({"error": "Missing authorization token"}))).into_response());
+        }
     };
 
     let validation = Validation::new(Algorithm::HS256);
     let key = DecodingKey::from_secret(&state.jwt_secret);
 
-    let data =
-        decode::<JwtClaims>(&token, &key, &validation).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let data = match decode::<JwtClaims>(&token, &key, &validation) {
+        Ok(d) => d,
+        Err(_) => {
+            return Err((StatusCode::UNAUTHORIZED, Json(json!({"error": "Invalid token"}))).into_response());
+        }
+    };
 
     req.extensions_mut().insert(AuthContext {
         user_id: data.claims.uid,

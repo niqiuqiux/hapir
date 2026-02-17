@@ -35,13 +35,13 @@ pub struct SyncEngine {
 impl SyncEngine {
     pub fn new(store: Arc<Store>, rpc_transport: Arc<dyn RpcTransport>) -> Self {
         let sse_manager = SseManager::new(30_000);
-        let publisher = EventPublisher::new(sse_manager);
+        let mut publisher = EventPublisher::new(sse_manager);
         let mut session_cache = SessionCache::new();
         let mut machine_cache = MachineCache::new();
 
         // Load existing data from store
-        session_cache.reload_all(&store, &publisher);
-        machine_cache.reload_all(&store, &publisher);
+        session_cache.reload_all(&store, &mut publisher);
+        machine_cache.reload_all(&store, &mut publisher);
 
         let rpc_gateway = RpcGateway::new(rpc_transport);
 
@@ -80,7 +80,7 @@ impl SyncEngine {
         self.session_cache
             .get_session(session_id)
             .cloned()
-            .or_else(|| self.session_cache.refresh_session(session_id, &self.store, &self.publisher))
+            .or_else(|| self.session_cache.refresh_session(session_id, &self.store, &mut self.publisher))
     }
 
     pub fn get_session_by_namespace(&mut self, session_id: &str, namespace: &str) -> Option<Session> {
@@ -88,7 +88,7 @@ impl SyncEngine {
             .session_cache
             .get_session_by_namespace(session_id, namespace)
             .cloned()
-            .or_else(|| self.session_cache.refresh_session(session_id, &self.store, &self.publisher));
+            .or_else(|| self.session_cache.refresh_session(session_id, &self.store, &mut self.publisher));
         session.filter(|s| s.namespace == namespace)
     }
 
@@ -97,7 +97,7 @@ impl SyncEngine {
         session_id: &str,
         namespace: &str,
     ) -> Result<(String, Session), &'static str> {
-        self.session_cache.resolve_session_access(session_id, namespace, &self.store, &self.publisher)
+        self.session_cache.resolve_session_access(session_id, namespace, &self.store, &mut self.publisher)
     }
 
     pub fn get_active_sessions(&self) -> Vec<Session> {
@@ -111,7 +111,7 @@ impl SyncEngine {
         agent_state: Option<&Value>,
         namespace: &str,
     ) -> anyhow::Result<Session> {
-        self.session_cache.get_or_create_session(tag, metadata, agent_state, namespace, &self.store, &self.publisher)
+        self.session_cache.get_or_create_session(tag, metadata, agent_state, namespace, &self.store, &mut self.publisher)
     }
 
     // --- Machine accessors ---
@@ -147,7 +147,7 @@ impl SyncEngine {
         runner_state: Option<&Value>,
         namespace: &str,
     ) -> anyhow::Result<Machine> {
-        self.machine_cache.get_or_create_machine(id, metadata, runner_state, namespace, &self.store, &self.publisher)
+        self.machine_cache.get_or_create_machine(id, metadata, runner_state, namespace, &self.store, &mut self.publisher)
     }
 
     // --- Messages ---
@@ -161,14 +161,14 @@ impl SyncEngine {
     }
 
     pub fn send_message(
-        &self,
+        &mut self,
         session_id: &str,
         text: &str,
         local_id: Option<&str>,
         attachments: Option<&[AttachmentMetadata]>,
         sent_from: Option<&str>,
     ) -> anyhow::Result<()> {
-        MessageService::send_message(&self.store, &self.publisher, session_id, text, local_id, attachments, sent_from)
+        MessageService::send_message(&self.store, &mut self.publisher, session_id, text, local_id, attachments, sent_from)
     }
 
     // --- Realtime event handling ---
@@ -176,16 +176,16 @@ impl SyncEngine {
     pub fn handle_realtime_event(&mut self, event: SyncEvent) {
         match &event {
             SyncEvent::SessionUpdated { session_id, .. } => {
-                self.session_cache.refresh_session(session_id, &self.store, &self.publisher);
+                self.session_cache.refresh_session(session_id, &self.store, &mut self.publisher);
                 return;
             }
             SyncEvent::MachineUpdated { machine_id, .. } => {
-                self.machine_cache.refresh_machine(machine_id, &self.store, &self.publisher);
+                self.machine_cache.refresh_machine(machine_id, &self.store, &mut self.publisher);
                 return;
             }
             SyncEvent::MessageReceived { session_id, .. } => {
                 if self.session_cache.get_session(session_id).is_none() {
-                    self.session_cache.refresh_session(session_id, &self.store, &self.publisher);
+                    self.session_cache.refresh_session(session_id, &self.store, &mut self.publisher);
                 }
             }
             _ => {}
@@ -202,22 +202,27 @@ impl SyncEngine {
         model_mode: Option<ModelMode>,
     ) {
         self.session_cache.handle_session_alive(
-            sid, time, thinking, permission_mode, model_mode, &self.store, &self.publisher,
+            sid, time, thinking, permission_mode, model_mode, &self.store, &mut self.publisher,
         );
     }
 
     pub fn handle_session_end(&mut self, sid: &str, time: i64) {
-        self.session_cache.handle_session_end(sid, time, &self.store, &self.publisher);
+        self.session_cache.handle_session_end(sid, time, &self.store, &mut self.publisher);
     }
 
     pub fn handle_machine_alive(&mut self, machine_id: &str, time: i64) {
-        self.machine_cache.handle_machine_alive(machine_id, time, &self.store, &self.publisher);
+        self.machine_cache.handle_machine_alive(machine_id, time, &self.store, &mut self.publisher);
+    }
+
+    /// Mark a machine as offline immediately (e.g. on WebSocket disconnect).
+    pub fn mark_machine_offline(&mut self, machine_id: &str) {
+        self.machine_cache.mark_machine_offline(machine_id, &mut self.publisher);
     }
 
     /// Called periodically to expire inactive sessions and machines.
     pub fn expire_inactive(&mut self) {
-        self.session_cache.expire_inactive(&self.publisher);
-        self.machine_cache.expire_inactive(&self.publisher);
+        self.session_cache.expire_inactive(&mut self.publisher);
+        self.machine_cache.expire_inactive(&mut self.publisher);
     }
 
     // PLACEHOLDER_SYNC_ENGINE_PART2
@@ -264,11 +269,11 @@ impl SyncEngine {
     }
 
     pub fn rename_session(&mut self, session_id: &str, name: &str) -> anyhow::Result<()> {
-        self.session_cache.rename_session(session_id, name, &self.store, &self.publisher)
+        self.session_cache.rename_session(session_id, name, &self.store, &mut self.publisher)
     }
 
     pub fn delete_session(&mut self, session_id: &str) -> anyhow::Result<()> {
-        self.session_cache.delete_session(session_id, &self.store, &self.publisher)
+        self.session_cache.delete_session(session_id, &self.store, &mut self.publisher)
     }
 
     pub async fn apply_session_config(
@@ -284,7 +289,7 @@ impl SyncEngine {
             .and_then(|v| serde_json::from_value(v.clone()).ok());
         let mm: Option<ModelMode> = applied.get("modelMode")
             .and_then(|v| serde_json::from_value(v.clone()).ok());
-        self.session_cache.apply_session_config(session_id, pm, mm, &self.store, &self.publisher);
+        self.session_cache.apply_session_config(session_id, pm, mm, &self.store, &mut self.publisher);
         Ok(())
     }
 
@@ -352,7 +357,7 @@ impl SyncEngine {
         new_session_id: &str,
         namespace: &str,
     ) -> anyhow::Result<()> {
-        self.session_cache.merge_sessions(old_session_id, new_session_id, namespace, &self.store, &self.publisher)
+        self.session_cache.merge_sessions(old_session_id, new_session_id, namespace, &self.store, &mut self.publisher)
     }
 
     /// Resume an inactive session by finding a suitable machine and spawning.
@@ -362,7 +367,7 @@ impl SyncEngine {
         namespace: &str,
     ) -> ResumeSessionResult {
         let access = self.session_cache.resolve_session_access(
-            session_id, namespace, &self.store, &self.publisher,
+            session_id, namespace, &self.store, &mut self.publisher,
         );
         let (original_id, session) = match access {
             Ok(pair) => pair,
@@ -493,7 +498,7 @@ impl SyncEngine {
         // Merge old session into new if they differ
         if spawn_session_id != original_id {
             if let Err(e) = self.session_cache.merge_sessions(
-                &original_id, &spawn_session_id, namespace, &self.store, &self.publisher,
+                &original_id, &spawn_session_id, namespace, &self.store, &mut self.publisher,
             ) {
                 return ResumeSessionResult::Error {
                     message: e.to_string(),

@@ -86,7 +86,7 @@ impl MessageService {
 
     pub fn send_message(
         store: &Store,
-        publisher: &EventPublisher,
+        publisher: &mut EventPublisher,
         session_id: &str,
         text: &str,
         local_id: Option<&str>,

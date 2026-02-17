@@ -91,16 +91,27 @@ impl PushService {
             }
         };
 
-        for subscription in &subscriptions {
-            match self
-                .send_web_push(
-                    &subscription.endpoint,
-                    &subscription.p256dh,
-                    &subscription.auth,
-                    &body,
-                )
-                .await
-            {
+        let futures: Vec<_> = subscriptions
+            .iter()
+            .map(|subscription| {
+                let body = body.clone();
+                async move {
+                    let result = self
+                        .send_web_push(
+                            &subscription.endpoint,
+                            &subscription.p256dh,
+                            &subscription.auth,
+                            &body,
+                        )
+                        .await;
+                    (subscription, result)
+                }
+            })
+            .collect();
+
+        let results = futures::future::join_all(futures).await;
+        for (subscription, result) in results {
+            match result {
                 Ok(()) => {}
                 Err(PushError::SubscriptionGone) => {
                     let conn = self.store.conn();

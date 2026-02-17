@@ -96,20 +96,25 @@ impl SseManager {
     }
 
     /// Broadcast an event to all matching connections.
-    pub fn broadcast(&self, event: &SyncEvent) {
+    /// Returns IDs of connections that failed delivery (for deferred cleanup).
+    pub fn broadcast(&self, event: &SyncEvent) -> Vec<String> {
+        let mut failed = Vec::new();
         for conn in self.connections.values() {
             if !self.should_send(&conn.sub, event) {
                 continue;
             }
             if conn.tx.send(SseMessage::Event(event.clone())).is_err() {
-                // Connection dropped — will be cleaned up later
+                failed.push(conn.sub.id.clone());
             }
         }
+        failed
     }
 
     /// Send a toast to visible connections in a namespace. Returns delivery count.
-    pub fn send_toast(&self, namespace: &str, event: &SyncEvent) -> usize {
+    /// Auto-unsubscribes connections that fail delivery.
+    pub fn send_toast(&mut self, namespace: &str, event: &SyncEvent) -> usize {
         let mut count = 0;
+        let mut failed = Vec::new();
         for conn in self.connections.values() {
             if conn.sub.namespace != namespace {
                 continue;
@@ -119,15 +124,26 @@ impl SseManager {
             }
             if conn.tx.send(SseMessage::Event(event.clone())).is_ok() {
                 count += 1;
+            } else {
+                failed.push(conn.sub.id.clone());
             }
+        }
+        for id in failed {
+            self.unsubscribe(&id);
         }
         count
     }
 
-    /// Send heartbeat to all connections.
-    pub fn send_heartbeats(&self) {
+    /// Send heartbeat to all connections. Auto-unsubscribes failed connections.
+    pub fn send_heartbeats(&mut self) {
+        let mut failed = Vec::new();
         for conn in self.connections.values() {
-            let _ = conn.tx.send(SseMessage::Heartbeat);
+            if conn.tx.send(SseMessage::Heartbeat).is_err() {
+                failed.push(conn.sub.id.clone());
+            }
+        }
+        for id in failed {
+            self.unsubscribe(&id);
         }
     }
 

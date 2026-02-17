@@ -604,12 +604,20 @@ async fn list_skills(
 
 const MAX_UPLOAD_BYTES: usize = 50 * 1024 * 1024;
 
-/// Estimate decoded size from base64 string length.
-fn estimate_base64_bytes(len: usize) -> usize {
+/// Estimate decoded size from base64 string length, accounting for padding.
+fn estimate_base64_bytes(b64: &str) -> usize {
+    let len = b64.len();
     if len == 0 {
         return 0;
     }
-    len * 3 / 4
+    let padding = if b64.ends_with("==") {
+        2
+    } else if b64.ends_with('=') {
+        1
+    } else {
+        0
+    };
+    (len * 3 / 4) - padding
 }
 
 #[derive(Deserialize)]
@@ -643,7 +651,7 @@ async fn upload_file(
         );
     }
 
-    if estimate_base64_bytes(body.content.len()) > MAX_UPLOAD_BYTES {
+    if estimate_base64_bytes(&body.content) > MAX_UPLOAD_BYTES {
         return (
             StatusCode::PAYLOAD_TOO_LARGE,
             Json(json!({ "success": false, "error": "File too large (max 50MB)" })),

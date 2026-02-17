@@ -111,6 +111,11 @@ impl ConnectionManager {
             .map(|c| c.namespace.clone())
     }
 
+    /// Read-only access to the connections map.
+    pub async fn connections_read(&self) -> tokio::sync::RwLockReadGuard<'_, HashMap<String, WsConnection>> {
+        self.connections.read().await
+    }
+
     /// Send a text message to a specific connection.
     pub async fn send_to(&self, conn_id: &str, msg: &str) -> bool {
         if let Some(tx) = self.get_connection_tx(conn_id).await {

@@ -108,7 +108,7 @@ impl MachineCache {
         runner_state: Option<&Value>,
         namespace: &str,
         store: &Store,
-        publisher: &EventPublisher,
+        publisher: &mut EventPublisher,
     ) -> anyhow::Result<Machine> {
         use crate::store::machines;
         let stored = machines::get_or_create_machine(&store.conn(), id, metadata, runner_state, namespace)?;
@@ -120,7 +120,7 @@ impl MachineCache {
         &mut self,
         machine_id: &str,
         store: &Store,
-        publisher: &EventPublisher,
+        publisher: &mut EventPublisher,
     ) -> Option<Machine> {
         use crate::store::machines as store_machines;
 
@@ -189,7 +189,7 @@ impl MachineCache {
         Some(machine)
     }
 
-    pub fn reload_all(&mut self, store: &Store, publisher: &EventPublisher) {
+    pub fn reload_all(&mut self, store: &Store, publisher: &mut EventPublisher) {
         use crate::store::machines;
         let all = machines::get_machines(&store.conn());
         for m in all {
@@ -202,7 +202,7 @@ impl MachineCache {
         machine_id: &str,
         time: i64,
         store: &Store,
-        publisher: &EventPublisher,
+        publisher: &mut EventPublisher,
     ) {
         let t = match clamp_alive_time(time) {
             Some(t) => t,
@@ -235,7 +235,7 @@ impl MachineCache {
         }
     }
 
-    pub fn expire_inactive(&mut self, publisher: &EventPublisher) {
+    pub fn expire_inactive(&mut self, publisher: &mut EventPublisher) {
         let now = now_millis();
         let expired: Vec<String> = self
             .machines
@@ -245,10 +245,17 @@ impl MachineCache {
             .collect();
 
         for id in expired {
-            if let Some(machine) = self.machines.get_mut(&id) {
+            self.mark_machine_offline(&id, publisher);
+        }
+    }
+
+    /// Mark a specific machine as offline (e.g. when its WebSocket disconnects).
+    pub fn mark_machine_offline(&mut self, machine_id: &str, publisher: &mut EventPublisher) {
+        if let Some(machine) = self.machines.get_mut(machine_id) {
+            if machine.active {
                 machine.active = false;
                 publisher.emit(SyncEvent::MachineUpdated {
-                    machine_id: id,
+                    machine_id: machine_id.to_string(),
                     namespace: None,
                     data: Some(serde_json::json!({"active": false})),
                 });

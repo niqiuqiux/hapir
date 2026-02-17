@@ -48,6 +48,17 @@ pub fn get_or_create_machine(
         if machine.namespace != namespace {
             anyhow::bail!("machine namespace mismatch");
         }
+        // Update metadata if the caller provided non-empty metadata
+        if metadata.as_object().is_some_and(|o| !o.is_empty()) {
+            let now = now_millis();
+            let metadata_json = serde_json::to_string(metadata)?;
+            conn.execute(
+                "UPDATE machines SET metadata = ?1, updated_at = ?2, seq = seq + 1 WHERE id = ?3",
+                rusqlite::params![metadata_json, now, id],
+            )?;
+            return get_machine(conn, id)
+                .ok_or_else(|| anyhow::anyhow!("failed to reload machine after metadata update"));
+        }
         return Ok(machine);
     }
 

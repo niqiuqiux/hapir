@@ -33,5 +33,13 @@ pub fn get_or_create_jwt_secret(data_dir: &Path) -> Result<Vec<u8>> {
         std::fs::create_dir_all(dir)?;
     }
     std::fs::write(&path, json)?;
+
+    // Set file permissions to 0600 (owner read/write only)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+    }
+
     Ok(bytes.to_vec())
 }

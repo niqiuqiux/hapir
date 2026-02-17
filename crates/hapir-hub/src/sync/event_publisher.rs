@@ -30,9 +30,12 @@ impl EventPublisher {
         &mut self.sse_manager
     }
 
-    pub fn emit(&self, event: SyncEvent) {
-        // Broadcast to SSE connections
-        self.sse_manager.broadcast(&event);
+    pub fn emit(&mut self, event: SyncEvent) {
+        // Broadcast to SSE connections and clean up failed ones
+        let failed = self.sse_manager.broadcast(&event);
+        for id in failed {
+            self.sse_manager.unsubscribe(&id);
+        }
 
         // Broadcast to channel subscribers
         if let Err(e) = self.tx.send(event) {
@@ -41,7 +44,7 @@ impl EventPublisher {
         }
     }
 
-    pub fn emit_with_namespace(&self, mut event: SyncEvent, namespace: Option<String>) {
+    pub fn emit_with_namespace(&mut self, mut event: SyncEvent, namespace: Option<String>) {
         if let Some(ns) = namespace {
             set_event_namespace(&mut event, Some(ns));
         }

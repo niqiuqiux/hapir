@@ -89,8 +89,8 @@ pub async fn run_hub() -> anyhow::Result<()> {
     // Start notification hub
     let notification_hub = Arc::new(NotificationHub::new(
         notification_channels,
-        30_000, // ready cooldown ms
-        3_000,  // permission debounce ms
+        5_000, // ready cooldown ms
+        500,   // permission debounce ms
     ));
     notification_hub.clone().start(sync_engine.clone()).await;
 
@@ -103,6 +103,7 @@ pub async fn run_hub() -> anyhow::Result<()> {
         vapid_public_key,
         telegram_bot_token: config.telegram_bot_token.clone(),
         data_dir: config.data_dir.clone(),
+        cors_origins: config.cors_origins.clone(),
     };
 
     // Build WsState for WebSocket handlers
@@ -119,6 +120,7 @@ pub async fn run_hub() -> anyhow::Result<()> {
     };
 
     // Build combined router
+    let terminal_registry_for_idle = ws_state.terminal_registry.clone();
     let web_router = web::build_router(app_state);
     let ws_router = ws::ws_router(ws_state);
     let app = web_router.merge(ws_router);
@@ -126,24 +128,60 @@ pub async fn run_hub() -> anyhow::Result<()> {
     // Start periodic expiration timer
     let sync_for_expire = sync_engine.clone();
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
         loop {
             interval.tick().await;
             sync_for_expire.lock().await.expire_inactive();
         }
     });
 
-    // Start SSE heartbeat timer
+    // Start terminal idle timeout checker
+    let conn_mgr_for_idle = conn_mgr.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            let idle_ids = terminal_registry_for_idle.read().await.collect_idle();
+            if idle_ids.is_empty() {
+                continue;
+            }
+            let mut reg = terminal_registry_for_idle.write().await;
+            for terminal_id in idle_ids {
+                if let Some(entry) = reg.remove(&terminal_id) {
+                    // Notify terminal webapp socket
+                    let err_msg = serde_json::json!({
+                        "event": "terminal:error",
+                        "data": {
+                            "terminalId": entry.terminal_id,
+                            "message": "Terminal closed due to inactivity."
+                        }
+                    });
+                    conn_mgr_for_idle.send_to(&entry.socket_id, &err_msg.to_string()).await;
+
+                    // Notify CLI socket
+                    let close_msg = serde_json::json!({
+                        "event": "terminal:close",
+                        "data": {
+                            "sessionId": entry.session_id,
+                            "terminalId": entry.terminal_id
+                        }
+                    });
+                    conn_mgr_for_idle.send_to(&entry.cli_socket_id, &close_msg.to_string()).await;
+                }
+            }
+        }
+    });
+
+    // Start SSE heartbeat timer (lazy: only sends when connections exist)
     let sync_for_heartbeat = sync_engine.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
         loop {
             interval.tick().await;
-            sync_for_heartbeat
-                .lock()
-                .await
-                .sse_manager_mut()
-                .send_heartbeats();
+            let mut engine = sync_for_heartbeat.lock().await;
+            if engine.sse_manager().connection_count() > 0 {
+                engine.sse_manager_mut().send_heartbeats();
+            }
         }
     });
 

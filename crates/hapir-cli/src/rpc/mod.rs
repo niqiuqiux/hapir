@@ -70,4 +70,21 @@ impl RpcHandlerManager {
     pub fn scope_prefix(&self) -> &str {
         &self.scope_prefix
     }
+
+    /// Drain all handlers, returning (unscoped_method, handler_fn) pairs.
+    /// This consumes the handlers from the manager.
+    pub async fn drain_handlers(&self) -> Vec<(String, RpcHandlerFn)> {
+        let mut handlers = self.handlers.write().await;
+        let prefix = format!("{}:", self.scope_prefix);
+        handlers
+            .drain()
+            .map(|(scoped_key, handler)| {
+                let method = scoped_key
+                    .strip_prefix(&prefix)
+                    .unwrap_or(&scoped_key)
+                    .to_string();
+                (method, handler)
+            })
+            .collect()
+    }
 }

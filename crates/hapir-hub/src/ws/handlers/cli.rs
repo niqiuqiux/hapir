@@ -1,13 +1,69 @@
 use std::sync::Arc;
 
 use serde_json::Value;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 use tracing::debug;
 
 use crate::store::Store;
 use crate::sync::SyncEngine;
 use crate::sync::todos::extract_todos_from_message_content;
 use super::super::connection_manager::ConnectionManager;
+use super::super::terminal_registry::TerminalRegistry;
+
+// ---------- Access resolution (mirrors TS resolveSessionAccess / resolveMachineAccess) ----------
+
+enum AccessError {
+    NamespaceMissing,
+    AccessDenied,
+    NotFound,
+}
+
+fn resolve_session_access(store: &Store, sid: &str, namespace: &str) -> Result<(), AccessError> {
+    use crate::store::sessions;
+    if namespace.is_empty() {
+        return Err(AccessError::NamespaceMissing);
+    }
+    if sessions::get_session_by_namespace(&store.conn(), sid, namespace).is_some() {
+        return Ok(());
+    }
+    if sessions::get_session(&store.conn(), sid).is_some() {
+        return Err(AccessError::AccessDenied);
+    }
+    Err(AccessError::NotFound)
+}
+
+fn resolve_machine_access(store: &Store, mid: &str, namespace: &str) -> Result<(), AccessError> {
+    use crate::store::machines;
+    if namespace.is_empty() {
+        return Err(AccessError::NamespaceMissing);
+    }
+    if machines::get_machine_by_namespace(&store.conn(), mid, namespace).is_some() {
+        return Ok(());
+    }
+    if machines::get_machine(&store.conn(), mid).is_some() {
+        return Err(AccessError::AccessDenied);
+    }
+    Err(AccessError::NotFound)
+}
+
+async fn emit_access_error(
+    conn_mgr: &ConnectionManager,
+    conn_id: &str,
+    scope: &str,
+    id: &str,
+    err: AccessError,
+) {
+    let (message, code) = match err {
+        AccessError::AccessDenied => (format!("{scope} access denied"), "access-denied"),
+        AccessError::NotFound => (format!("{scope} not found"), "not-found"),
+        AccessError::NamespaceMissing => ("Namespace missing".to_string(), "namespace-missing"),
+    };
+    let msg = serde_json::json!({
+        "event": "error",
+        "data": { "message": message, "code": code, "scope": scope, "id": id }
+    });
+    conn_mgr.send_to(conn_id, &msg.to_string()).await;
+}
 
 /// Process an incoming WebSocket event from a CLI connection.
 pub async fn handle_cli_event(
@@ -19,21 +75,22 @@ pub async fn handle_cli_event(
     sync_engine: &Arc<Mutex<SyncEngine>>,
     store: &Arc<Store>,
     conn_mgr: &Arc<ConnectionManager>,
+    terminal_registry: &Arc<RwLock<TerminalRegistry>>,
 ) -> Option<Value> {
     match event {
         "message" => handle_message(conn_id, namespace, data, sync_engine, store, conn_mgr).await,
         "update-metadata" => handle_update_metadata(namespace, data, store, sync_engine, conn_id, conn_mgr).await,
         "update-state" => handle_update_state(namespace, data, store, sync_engine, conn_id, conn_mgr).await,
         "session-alive" => {
-            handle_session_alive(namespace, data, store, sync_engine).await;
+            handle_session_alive(conn_id, namespace, data, store, sync_engine, conn_mgr).await;
             None
         }
         "session-end" => {
-            handle_session_end(namespace, data, store, sync_engine).await;
+            handle_session_end(conn_id, namespace, data, store, sync_engine, conn_mgr).await;
             None
         }
         "machine-alive" => {
-            handle_machine_alive(namespace, data, store, sync_engine).await;
+            handle_machine_alive(conn_id, namespace, data, store, sync_engine, conn_mgr).await;
             None
         }
         "machine-update-metadata" => handle_machine_update_metadata(namespace, data, store, sync_engine, conn_id, conn_mgr).await,
@@ -63,6 +120,18 @@ pub async fn handle_cli_event(
             }
             None
         }
+        "terminal:ready" | "terminal:output" => {
+            forward_terminal_event(conn_id, event, &data, conn_mgr, terminal_registry, true).await;
+            None
+        }
+        "terminal:error" => {
+            forward_terminal_event(conn_id, event, &data, conn_mgr, terminal_registry, false).await;
+            None
+        }
+        "terminal:exit" => {
+            handle_terminal_exit_from_cli(conn_id, &data, conn_mgr, terminal_registry).await;
+            None
+        }
         "ping" => Some(Value::Null),
         _ => {
             debug!(event, "unhandled CLI event");
@@ -83,11 +152,9 @@ async fn handle_message(
     let local_id = data.get("localId").and_then(|v| v.as_str());
 
     // Validate session access
-    {
-        use crate::store::sessions;
-        if sessions::get_session_by_namespace(&store.conn(), sid, namespace).is_none() {
-            return None;
-        }
+    if let Err(err) = resolve_session_access(store, sid, namespace) {
+        emit_access_error(conn_mgr, conn_id, "session", sid, err).await;
+        return None;
     }
 
     // Parse message content
@@ -178,8 +245,12 @@ async fn handle_update_metadata(
     let metadata = data.get("metadata")?;
 
     use crate::store::{sessions, types::VersionedUpdateResult};
-    if sessions::get_session_by_namespace(&store.conn(), sid, namespace).is_none() {
-        return Some(serde_json::json!({"result": "error", "reason": "access-denied"}));
+    if let Err(err) = resolve_session_access(store, sid, namespace) {
+        return Some(serde_json::json!({"result": "error", "reason": match err {
+            AccessError::AccessDenied => "access-denied",
+            AccessError::NotFound => "not-found",
+            AccessError::NamespaceMissing => "namespace-missing",
+        }}));
     }
 
     let metadata_val = metadata.clone();
@@ -238,8 +309,12 @@ async fn handle_update_state(
     let agent_state = data.get("agentState");
 
     use crate::store::{sessions, types::VersionedUpdateResult};
-    if sessions::get_session_by_namespace(&store.conn(), sid, namespace).is_none() {
-        return Some(serde_json::json!({"result": "error", "reason": "access-denied"}));
+    if let Err(err) = resolve_session_access(store, sid, namespace) {
+        return Some(serde_json::json!({"result": "error", "reason": match err {
+            AccessError::AccessDenied => "access-denied",
+            AccessError::NotFound => "not-found",
+            AccessError::NamespaceMissing => "namespace-missing",
+        }}));
     }
 
     let result = sessions::update_session_agent_state(
@@ -284,10 +359,12 @@ async fn handle_update_state(
 }
 
 async fn handle_session_alive(
+    conn_id: &str,
     namespace: &str,
     data: Value,
     store: &Arc<Store>,
     sync_engine: &Arc<Mutex<SyncEngine>>,
+    conn_mgr: &Arc<ConnectionManager>,
 ) {
     let sid = match data.get("sid").and_then(|v| v.as_str()) {
         Some(s) => s.to_string(),
@@ -298,12 +375,13 @@ async fn handle_session_alive(
         None => return,
     };
 
-    use crate::store::sessions;
-    if sessions::get_session_by_namespace(&store.conn(), &sid, namespace).is_none() {
+    if let Err(err) = resolve_session_access(store, &sid, namespace) {
+        emit_access_error(conn_mgr, conn_id, "session", &sid, err).await;
         return;
     }
 
     let thinking = data.get("thinking").and_then(|v| v.as_bool());
+    let _mode = data.get("mode").and_then(|v| v.as_str()); // accepted for protocol compat
     let permission_mode = data.get("permissionMode")
         .and_then(|v| serde_json::from_value(v.clone()).ok());
     let model_mode = data.get("modelMode")
@@ -313,10 +391,12 @@ async fn handle_session_alive(
 }
 
 async fn handle_session_end(
+    conn_id: &str,
     namespace: &str,
     data: Value,
     store: &Arc<Store>,
     sync_engine: &Arc<Mutex<SyncEngine>>,
+    conn_mgr: &Arc<ConnectionManager>,
 ) {
     let sid = match data.get("sid").and_then(|v| v.as_str()) {
         Some(s) => s.to_string(),
@@ -327,8 +407,8 @@ async fn handle_session_end(
         None => return,
     };
 
-    use crate::store::sessions;
-    if sessions::get_session_by_namespace(&store.conn(), &sid, namespace).is_none() {
+    if let Err(err) = resolve_session_access(store, &sid, namespace) {
+        emit_access_error(conn_mgr, conn_id, "session", &sid, err).await;
         return;
     }
 
@@ -336,10 +416,12 @@ async fn handle_session_end(
 }
 
 async fn handle_machine_alive(
+    conn_id: &str,
     namespace: &str,
     data: Value,
     store: &Arc<Store>,
     sync_engine: &Arc<Mutex<SyncEngine>>,
+    conn_mgr: &Arc<ConnectionManager>,
 ) {
     let machine_id = match data.get("machineId").and_then(|v| v.as_str()) {
         Some(s) => s.to_string(),
@@ -350,8 +432,8 @@ async fn handle_machine_alive(
         None => return,
     };
 
-    use crate::store::machines;
-    if machines::get_machine_by_namespace(&store.conn(), &machine_id, namespace).is_none() {
+    if let Err(err) = resolve_machine_access(store, &machine_id, namespace) {
+        emit_access_error(conn_mgr, conn_id, "machine", &machine_id, err).await;
         return;
     }
 
@@ -371,8 +453,12 @@ async fn handle_machine_update_metadata(
     let metadata = data.get("metadata")?;
 
     use crate::store::{machines, types::VersionedUpdateResult};
-    if machines::get_machine_by_namespace(&store.conn(), mid, namespace).is_none() {
-        return Some(serde_json::json!({"result": "error", "reason": "access-denied"}));
+    if let Err(err) = resolve_machine_access(store, mid, namespace) {
+        return Some(serde_json::json!({"result": "error", "reason": match err {
+            AccessError::AccessDenied => "access-denied",
+            AccessError::NotFound => "not-found",
+            AccessError::NamespaceMissing => "namespace-missing",
+        }}));
     }
 
     let result = machines::update_machine_metadata(&store.conn(), mid, &metadata.clone(), expected_version, namespace);
@@ -427,8 +513,12 @@ async fn handle_machine_update_state(
     let runner_state = data.get("runnerState");
 
     use crate::store::{machines, types::VersionedUpdateResult};
-    if machines::get_machine_by_namespace(&store.conn(), mid, namespace).is_none() {
-        return Some(serde_json::json!({"result": "error", "reason": "access-denied"}));
+    if let Err(err) = resolve_machine_access(store, mid, namespace) {
+        return Some(serde_json::json!({"result": "error", "reason": match err {
+            AccessError::AccessDenied => "access-denied",
+            AccessError::NotFound => "not-found",
+            AccessError::NamespaceMissing => "namespace-missing",
+        }}));
     }
 
     let result = machines::update_machine_runner_state(&store.conn(), mid, runner_state, expected_version, namespace);
@@ -468,4 +558,77 @@ async fn handle_machine_update_state(
     };
 
     Some(response)
+}
+
+// ---------- Terminal event forwarding (CLI → webapp) ----------
+
+/// Forward terminal:ready, terminal:output, terminal:error from CLI to the webapp terminal socket.
+/// `should_mark_activity` is true for ready/output, false for error (matching TS behavior).
+async fn forward_terminal_event(
+    conn_id: &str,
+    event: &str,
+    data: &Value,
+    conn_mgr: &Arc<ConnectionManager>,
+    terminal_registry: &Arc<RwLock<TerminalRegistry>>,
+    should_mark_activity: bool,
+) {
+    let terminal_id = match data.get("terminalId").and_then(|v| v.as_str()) {
+        Some(id) => id.to_string(),
+        None => return,
+    };
+
+    let entry = {
+        let reg = terminal_registry.read().await;
+        match reg.get(&terminal_id) {
+            Some(e) if e.cli_socket_id == conn_id => e.clone(),
+            _ => return,
+        }
+    };
+
+    if data.get("sessionId").and_then(|v| v.as_str()) != Some(&entry.session_id) {
+        return;
+    }
+
+    if should_mark_activity {
+        terminal_registry.write().await.mark_activity(&terminal_id);
+    }
+
+    let msg = serde_json::json!({
+        "event": event,
+        "data": data,
+    });
+    conn_mgr.send_to(&entry.socket_id, &msg.to_string()).await;
+}
+
+/// Handle terminal:exit from CLI — forward to webapp and remove from registry.
+async fn handle_terminal_exit_from_cli(
+    conn_id: &str,
+    data: &Value,
+    conn_mgr: &Arc<ConnectionManager>,
+    terminal_registry: &Arc<RwLock<TerminalRegistry>>,
+) {
+    let terminal_id = match data.get("terminalId").and_then(|v| v.as_str()) {
+        Some(id) => id.to_string(),
+        None => return,
+    };
+
+    let entry = {
+        let reg = terminal_registry.read().await;
+        match reg.get(&terminal_id) {
+            Some(e) if e.cli_socket_id == conn_id => e.clone(),
+            _ => return,
+        }
+    };
+
+    if data.get("sessionId").and_then(|v| v.as_str()) != Some(&entry.session_id) {
+        return;
+    }
+
+    terminal_registry.write().await.remove(&terminal_id);
+
+    let msg = serde_json::json!({
+        "event": "terminal:exit",
+        "data": data,
+    });
+    conn_mgr.send_to(&entry.socket_id, &msg.to_string()).await;
 }

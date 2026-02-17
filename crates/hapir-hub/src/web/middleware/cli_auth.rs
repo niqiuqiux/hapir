@@ -2,9 +2,13 @@ use axum::{
     extract::{Request, State},
     http::StatusCode,
     middleware::Next,
-    response::Response,
+    response::{IntoResponse, Response},
+    Json,
 };
+use serde_json::json;
 use subtle::ConstantTimeEq;
+
+use hapir_shared::version::PROTOCOL_VERSION;
 
 use crate::web::AppState;
 
@@ -34,23 +38,44 @@ pub async fn cli_auth(
     State(state): State<AppState>,
     mut req: Request,
     next: Next,
-) -> Result<Response, StatusCode> {
-    let token = req
+) -> Result<Response, Response> {
+    let auth_header = req
         .headers()
         .get(axum::http::header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .ok_or(StatusCode::UNAUTHORIZED)?;
+        .and_then(|v| v.to_str().ok());
 
-    let (base_token, namespace) =
-        parse_access_token(token).ok_or(StatusCode::UNAUTHORIZED)?;
+    let auth_header = match auth_header {
+        Some(h) => h,
+        None => {
+            return Err((StatusCode::UNAUTHORIZED, Json(json!({"error": "Missing Authorization header"}))).into_response());
+        }
+    };
+
+    let token = match auth_header.strip_prefix("Bearer ") {
+        Some(t) => t,
+        None => {
+            return Err((StatusCode::UNAUTHORIZED, Json(json!({"error": "Invalid Authorization header"}))).into_response());
+        }
+    };
+
+    let (base_token, namespace) = match parse_access_token(token) {
+        Some(pair) => pair,
+        None => {
+            return Err((StatusCode::UNAUTHORIZED, Json(json!({"error": "Invalid token"}))).into_response());
+        }
+    };
 
     let expected = state.cli_api_token.as_bytes();
     let provided = base_token.as_bytes();
     if expected.len() != provided.len() || expected.ct_eq(provided).unwrap_u8() != 1 {
-        return Err(StatusCode::UNAUTHORIZED);
+        return Err((StatusCode::UNAUTHORIZED, Json(json!({"error": "Invalid token"}))).into_response());
     }
 
     req.extensions_mut().insert(CliAuthContext { namespace });
-    Ok(next.run(req).await)
+    let mut response = next.run(req).await;
+    response.headers_mut().insert(
+        "X-Hapi-Protocol-Version",
+        axum::http::HeaderValue::from_str(&PROTOCOL_VERSION.to_string()).unwrap(),
+    );
+    Ok(response)
 }

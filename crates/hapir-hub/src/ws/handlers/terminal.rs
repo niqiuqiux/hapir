@@ -6,8 +6,18 @@ use tracing::debug;
 
 use crate::store::Store;
 use crate::sync::SyncEngine;
-use super::super::connection_manager::ConnectionManager;
+use super::super::connection_manager::{ConnectionManager, WsConnType};
 use super::super::terminal_registry::TerminalRegistry;
+
+/// Check if a CLI socket is still connected and belongs to the expected namespace.
+async fn resolve_cli_socket(conn_mgr: &ConnectionManager, cli_socket_id: &str, namespace: &str) -> bool {
+    // Check the connection exists, is CLI type, and has matching namespace
+    let conns = conn_mgr.connections_read().await;
+    match conns.get(cli_socket_id) {
+        Some(conn) if conn.conn_type == WsConnType::Cli && conn.namespace == namespace => true,
+        _ => false,
+    }
+}
 
 /// Process an incoming WebSocket event from a terminal (webapp) connection.
 pub async fn handle_terminal_event(
@@ -30,11 +40,11 @@ pub async fn handle_terminal_event(
             ).await
         }
         "terminal:write" => {
-            handle_terminal_write(conn_id, data, conn_mgr, terminal_registry).await;
+            handle_terminal_write(conn_id, namespace, data, conn_mgr, terminal_registry).await;
             None
         }
         "terminal:resize" => {
-            handle_terminal_resize(conn_id, data, conn_mgr, terminal_registry).await;
+            handle_terminal_resize(conn_id, namespace, data, conn_mgr, terminal_registry).await;
             None
         }
         "terminal:close" => {
@@ -134,11 +144,15 @@ async fn handle_terminal_create(
     });
     conn_mgr.send_to(&cli_socket_id, &open_msg.to_string()).await;
 
+    // Mark initial activity (matches TS behavior)
+    terminal_registry.write().await.mark_activity(terminal_id);
+
     None
 }
 
 async fn handle_terminal_write(
     conn_id: &str,
+    namespace: &str,
     data: Value,
     conn_mgr: &Arc<ConnectionManager>,
     terminal_registry: &Arc<RwLock<TerminalRegistry>>,
@@ -152,21 +166,28 @@ async fn handle_terminal_write(
         None => return,
     };
 
-    let cli_socket_id = {
+    let (cli_socket_id, session_id) = {
         let reg = terminal_registry.read().await;
         let entry = match reg.get(&terminal_id) {
             Some(e) if e.socket_id == conn_id => e,
             _ => return,
         };
-        entry.cli_socket_id.clone()
+        (entry.cli_socket_id.clone(), entry.session_id.clone())
     };
+
+    // Re-validate CLI socket is still connected and in the same namespace
+    if !resolve_cli_socket(conn_mgr, &cli_socket_id, namespace).await {
+        terminal_registry.write().await.remove(&terminal_id);
+        let err = serde_json::json!({
+            "event": "terminal:error",
+            "data": {"terminalId": terminal_id, "message": "CLI disconnected."}
+        });
+        conn_mgr.send_to(conn_id, &err.to_string()).await;
+        return;
+    }
 
     terminal_registry.write().await.mark_activity(&terminal_id);
 
-    let session_id = {
-        let reg = terminal_registry.read().await;
-        reg.get(&terminal_id).map(|e| e.session_id.clone()).unwrap_or_default()
-    };
     let msg = serde_json::json!({
         "event": "terminal:write",
         "data": {
@@ -180,6 +201,7 @@ async fn handle_terminal_write(
 
 async fn handle_terminal_resize(
     conn_id: &str,
+    namespace: &str,
     data: Value,
     conn_mgr: &Arc<ConnectionManager>,
     terminal_registry: &Arc<RwLock<TerminalRegistry>>,
@@ -199,6 +221,17 @@ async fn handle_terminal_resize(
         };
         (entry.cli_socket_id.clone(), entry.session_id.clone())
     };
+
+    // Re-validate CLI socket is still connected and in the same namespace
+    if !resolve_cli_socket(conn_mgr, &cli_socket_id, namespace).await {
+        terminal_registry.write().await.remove(&terminal_id);
+        let err = serde_json::json!({
+            "event": "terminal:error",
+            "data": {"terminalId": terminal_id, "message": "CLI disconnected."}
+        });
+        conn_mgr.send_to(conn_id, &err.to_string()).await;
+        return;
+    }
 
     terminal_registry.write().await.mark_activity(&terminal_id);
 

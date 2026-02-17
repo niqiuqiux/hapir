@@ -61,7 +61,7 @@ impl PushNotificationChannel {
         session_id: &str,
         url: &str,
     ) -> usize {
-        let engine = self.sync_engine.lock().await;
+        let mut engine = self.sync_engine.lock().await;
 
         if !engine.sse_manager().visibility().has_visible_connection(namespace) {
             return 0;
@@ -77,7 +77,7 @@ impl PushNotificationChannel {
             },
         };
 
-        engine.sse_manager().send_toast(namespace, &toast_event)
+        engine.sse_manager_mut().send_toast(namespace, &toast_event)
     }
 }
 
