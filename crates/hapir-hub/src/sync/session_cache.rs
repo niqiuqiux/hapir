@@ -327,8 +327,12 @@ impl SessionCache {
             .map(|(id, _)| id.clone())
             .collect();
 
+        if !expired.is_empty() {
+            tracing::info!(count = expired.len(), "expiring inactive sessions");
+        }
         for id in expired {
             if let Some(session) = self.sessions.get_mut(&id) {
+                tracing::debug!(session_id = %id, "session expired due to inactivity");
                 session.active = false;
                 session.thinking = false;
                 publisher.emit(SyncEvent::SessionUpdated {

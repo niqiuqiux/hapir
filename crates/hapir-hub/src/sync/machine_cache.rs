@@ -244,7 +244,11 @@ impl MachineCache {
             .map(|(id, _)| id.clone())
             .collect();
 
+        if !expired.is_empty() {
+            tracing::info!(count = expired.len(), "expiring inactive machines");
+        }
         for id in expired {
+            tracing::debug!(machine_id = %id, "machine expired due to inactivity");
             self.mark_machine_offline(&id, publisher);
         }
     }
