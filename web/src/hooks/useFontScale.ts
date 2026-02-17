@@ -13,7 +13,7 @@ export function getFontScaleOptions(): ReadonlyArray<{ value: FontScale; label: 
 }
 
 function getFontScaleStorageKey(): string {
-    return 'hapi-font-scale'
+    return 'hapir-font-scale'
 }
 
 function isBrowser(): boolean {

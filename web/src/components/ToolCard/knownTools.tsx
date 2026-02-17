@@ -6,7 +6,7 @@ import { basename, resolveDisplayPath } from '@/utils/path'
 import { getInputStringAny, truncate } from '@/lib/toolInputUtils'
 
 const DEFAULT_ICON_CLASS = 'h-3.5 w-3.5'
-// Tool presentation registry for `hapi/web` (aligned with `hapi-app`).
+// Tool presentation registry for `hapir/web` (aligned with `hapir-app`).
 
 export type ToolPresentation = {
     icon: ReactNode

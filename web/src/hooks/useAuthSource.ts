@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getTelegramWebApp, isTelegramEnvironment } from './useTelegram'
 import type { AuthSource } from './useAuth'
 
-const ACCESS_TOKEN_PREFIX = 'hapi_access_token::'
+const ACCESS_TOKEN_PREFIX = 'hapir_access_token::'
 
 function getTelegramInitData(): string | null {
     const tg = getTelegramWebApp()

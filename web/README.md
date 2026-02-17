@@ -1,4 +1,4 @@
-# hapi-web
+# hapir-web
 
 React Mini App / PWA for monitoring and controlling hapi sessions.
 
@@ -138,7 +138,7 @@ If testing in Telegram, set:
 bun run build:web
 ```
 
-The built assets land in `web/dist` and are served by hapi-hub. The single executable can embed these assets.
+The built assets land in `web/dist` and are served by hapir-hub. The single executable can embed these assets.
 
 ## Standalone hosting
 

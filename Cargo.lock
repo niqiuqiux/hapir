@@ -785,7 +785,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "hapi-cli"
+name = "hapir"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "hapir-cli",
+ "hapir-hub",
+ "hapir-shared",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "hapir-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -795,7 +809,7 @@ dependencies = [
  "clap",
  "dirs-next",
  "futures",
- "hapi-shared",
+ "hapir-shared",
  "hex",
  "libc",
  "pin-project-lite",
@@ -813,7 +827,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "hapi-hub"
+name = "hapir-hub"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -825,7 +839,7 @@ dependencies = [
  "form_urlencoded",
  "futures",
  "getrandom 0.4.1",
- "hapi-shared",
+ "hapir-shared",
  "hmac",
  "jsonwebtoken",
  "mime_guess",
@@ -852,27 +866,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "hapi-shared"
+name = "hapir-shared"
 version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
  "sys-locale",
  "ts-rs",
-]
-
-[[package]]
-name = "hapir"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "hapi-cli",
- "hapi-hub",
- "hapi-shared",
- "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

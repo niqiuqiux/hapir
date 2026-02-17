@@ -1,0 +1,44 @@
+[package]
+name = "hapir-hub"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+hapir-shared = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+rusqlite = { version = "0.38.0", features = ["bundled"] }
+uuid = { version = "1", features = ["v4"] }
+base64 = "0.22"
+getrandom = "0.4.1"
+url = "2"
+dirs-next = "2"
+axum = { version = "0.8", features = ["ws"] }
+axum-extra = { version = "0.12.5", features = ["typed-header"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors"] }
+jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }
+hmac = "0.12"
+sha2 = "0.10"
+subtle = "2"
+tokio-tungstenite = "0.28.0"
+futures = "0.3"
+tokio-stream = "0.1"
+p256 = { version = "0.13", features = ["ecdsa"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+urlencoding = "2"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+ece = "2"
+form_urlencoded = "1"
+rust-embed = "8"
+mime_guess = "2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[build-dependencies]
+hapir-shared = { workspace = true }
+ts-rs = { workspace = true }

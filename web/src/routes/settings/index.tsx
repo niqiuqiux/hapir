@@ -82,7 +82,7 @@ export default function SettingsPage() {
 
     // Voice language state - read from localStorage
     const [voiceLanguage, setVoiceLanguage] = useState<string | null>(() => {
-        return localStorage.getItem('hapi-voice-lang')
+        return localStorage.getItem('hapir-voice-lang')
     })
 
     const fontScaleOptions = getFontScaleOptions()
@@ -103,9 +103,9 @@ export default function SettingsPage() {
     const handleVoiceLanguageChange = (language: Language) => {
         setVoiceLanguage(language.code)
         if (language.code === null) {
-            localStorage.removeItem('hapi-voice-lang')
+            localStorage.removeItem('hapir-voice-lang')
         } else {
-            localStorage.setItem('hapi-voice-lang', language.code)
+            localStorage.setItem('hapir-voice-lang', language.code)
         }
         setIsVoiceOpen(false)
     }

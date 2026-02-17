@@ -1,9 +1,9 @@
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 
-use hapi_cli::commands::claude::ClaudeArgs;
-use hapi_cli::commands::codex::CodexArgs;
-use hapi_cli::commands::gemini::GeminiArgs;
-use hapi_cli::commands::opencode::OpencodeArgs;
+use hapir_cli::commands::claude::ClaudeArgs;
+use hapir_cli::commands::codex::CodexArgs;
+use hapir_cli::commands::gemini::GeminiArgs;
+use hapir_cli::commands::opencode::OpencodeArgs;
 
 #[derive(Parser)]
 #[command(name = "hapi", about = "Local-first AI agent remote control")]
@@ -88,7 +88,7 @@ enum RunnerAction {
 }
 
 fn build_cli() -> clap::Command {
-    let (about, subs) = hapi_shared::i18n::cli_about_strings();
+    let (about, subs) = hapir_shared::i18n::cli_about_strings();
     let mut cmd = Cli::command().about(about);
     for sub in subs {
         cmd = cmd.mut_subcommand(sub.name, |c| {
@@ -117,17 +117,17 @@ async fn main() {
     let cli = Cli::from_arg_matches(&matches).expect("clap derive mismatch");
 
     let result = match cli.command {
-        Some(Commands::Claude(args)) => hapi_cli::run_cli(args).await,
-        Some(Commands::Codex(args)) => hapi_cli::commands::codex::run(args).await,
-        Some(Commands::Gemini(args)) => hapi_cli::commands::gemini::run(args).await,
-        Some(Commands::Opencode(args)) => hapi_cli::commands::opencode::run(args).await,
-        Some(Commands::Mcp { args }) => hapi_cli::commands::mcp::run(args).await,
+        Some(Commands::Claude(args)) => hapir_cli::run_cli(args).await,
+        Some(Commands::Codex(args)) => hapir_cli::commands::codex::run(args).await,
+        Some(Commands::Gemini(args)) => hapir_cli::commands::gemini::run(args).await,
+        Some(Commands::Opencode(args)) => hapir_cli::commands::opencode::run(args).await,
+        Some(Commands::Mcp { args }) => hapir_cli::commands::mcp::run(args).await,
         Some(Commands::HookForwarder { args }) => {
-            hapi_cli::commands::hook_forwarder::run(args).await
+            hapir_cli::commands::hook_forwarder::run(args).await
         }
-        Some(Commands::Hub) => hapi_hub::run_hub().await,
+        Some(Commands::Hub) => hapir_hub::run_hub().await,
         Some(Commands::Auth { action }) => match action {
-            Some(a) => hapi_cli::commands::auth::run(Some(match a {
+            Some(a) => hapir_cli::commands::auth::run(Some(match a {
                 AuthAction::Status => "status",
                 AuthAction::Login => "login",
                 AuthAction::Logout => "logout",
@@ -150,7 +150,7 @@ async fn main() {
                     RunnerAction::Logs => "logs",
                     RunnerAction::List => "list",
                 };
-                hapi_cli::commands::runner::run(Some(sub)).await
+                hapir_cli::commands::runner::run(Some(sub)).await
             }
             None => {
                 let _ = cmd_for_help
@@ -160,14 +160,14 @@ async fn main() {
                 Ok(())
             }
         },
-        Some(Commands::Doctor) => hapi_cli::commands::doctor::run(),
+        Some(Commands::Doctor) => hapir_cli::commands::doctor::run(),
         // No subcommand: default to claude with any trailing args
         None => {
             let claude_args = ClaudeArgs::try_parse_from(
                 std::iter::once("hapi".to_string()).chain(cli.args),
             )
             .unwrap_or_else(|e| e.exit());
-            hapi_cli::run_cli(claude_args).await
+            hapir_cli::run_cli(claude_args).await
         }
     };
 
