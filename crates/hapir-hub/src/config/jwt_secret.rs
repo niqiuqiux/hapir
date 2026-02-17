@@ -2,6 +2,7 @@ use anyhow::Result;
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
+use std::fs::{set_permissions, Permissions};
 use std::path::Path;
 
 #[derive(Serialize, Deserialize)]
@@ -24,7 +25,8 @@ pub fn get_or_create_jwt_secret(data_dir: &Path) -> Result<Vec<u8>> {
 
     // Generate new secret
     let mut bytes = [0u8; 32];
-    getrandom::fill(&mut bytes).map_err(|e| anyhow::anyhow!("failed to generate random bytes: {e}"))?;
+    getrandom::fill(&mut bytes)
+        .map_err(|e| anyhow::anyhow!("failed to generate random bytes: {e}"))?;
     let file = JwtSecretFile {
         secret_base64: STANDARD.encode(bytes),
     };
@@ -38,7 +40,7 @@ pub fn get_or_create_jwt_secret(data_dir: &Path) -> Result<Vec<u8>> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+        set_permissions(&path, Permissions::from_mode(0o600))?;
     }
 
     Ok(bytes.to_vec())

@@ -12,15 +12,12 @@ use tokio::sync::{Mutex, RwLock};
 use tracing::info;
 
 use config::Configuration;
-use notifications::notification_hub::NotificationHub;
-use notifications::push_channel::{NotificationChannel, PushNotificationChannel};
-use notifications::push_service::PushService;
 use store::Store;
 use sync::SyncEngine;
 use web::AppState;
-use ws::WsState;
 use ws::connection_manager::ConnectionManager;
 use ws::terminal_registry::TerminalRegistry;
+use ws::WsState;
 
 pub async fn run_hub() -> anyhow::Result<()> {
     // Load configuration
@@ -39,6 +36,7 @@ pub async fn run_hub() -> anyhow::Result<()> {
     let store = Arc::new(Store::new(&db_path_str)?);
 
     // Get/create JWT secret
+    // Save into ${data_dir}/jwt-secret.json
     let jwt_secret = config::jwt_secret::get_or_create_jwt_secret(&config.data_dir)?;
 
     // Get/create VAPID keys (optional — push notifications disabled if unavailable)
@@ -51,47 +49,11 @@ pub async fn run_hub() -> anyhow::Result<()> {
     // Create SyncEngine
     let sync_engine = Arc::new(Mutex::new(SyncEngine::new(store.clone(), conn_mgr.clone())));
 
-    // Set up notification channels
-    let mut notification_channels: Vec<Arc<dyn NotificationChannel>> = Vec::new();
-
-    if let Some(ref keys) = vapid_keys {
-        let vapid_subject =
-            std::env::var("VAPID_SUBJECT").unwrap_or_else(|_| "mailto:admin@localhost".into());
-        let push_service = Arc::new(PushService::new(keys.clone(), vapid_subject, store.clone()));
-        let push_channel = Arc::new(PushNotificationChannel::new(
-            push_service,
-            sync_engine.clone(),
-            config.public_url.clone(),
-        ));
-        notification_channels.push(push_channel);
-    }
-
-    // Initialize Telegram bot (optional)
-    let happy_bot = if config.telegram_enabled {
-        if let Some(ref token) = config.telegram_bot_token {
-            let bot = Arc::new(telegram::bot::HappyBot::new(
-                token,
-                sync_engine.clone(),
-                store.clone(),
-                config.public_url.clone(),
-            ));
-            if config.telegram_notification {
-                notification_channels.push(bot.clone());
-            }
-            Some(bot)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
-    // Start notification hub
-    let notification_hub = Arc::new(NotificationHub::new(
-        notification_channels,
-        5_000, // ready cooldown ms
-        500,   // permission debounce ms
-    ));
+    // Set up notification channels and hub
+    let notifications::setup::NotificationSetup {
+        notification_hub,
+        happy_bot,
+    } = notifications::setup::build(&config, vapid_keys, store.clone(), sync_engine.clone());
     notification_hub.clone().start(sync_engine.clone()).await;
 
     // Build AppState for HTTP routes
@@ -156,7 +118,9 @@ pub async fn run_hub() -> anyhow::Result<()> {
                             "message": "Terminal closed due to inactivity."
                         }
                     });
-                    conn_mgr_for_idle.send_to(&entry.socket_id, &err_msg.to_string()).await;
+                    conn_mgr_for_idle
+                        .send_to(&entry.socket_id, &err_msg.to_string())
+                        .await;
 
                     // Notify CLI socket
                     let close_msg = serde_json::json!({
@@ -166,7 +130,9 @@ pub async fn run_hub() -> anyhow::Result<()> {
                             "terminalId": entry.terminal_id
                         }
                     });
-                    conn_mgr_for_idle.send_to(&entry.cli_socket_id, &close_msg.to_string()).await;
+                    conn_mgr_for_idle
+                        .send_to(&entry.cli_socket_id, &close_msg.to_string())
+                        .await;
                 }
             }
         }
@@ -225,7 +191,10 @@ pub async fn run_hub() -> anyhow::Result<()> {
     shutdown_notify.notify_one();
 
     // Give axum up to 5s to finish, then force abort
-    if tokio::time::timeout(std::time::Duration::from_secs(5), server_task).await.is_err() {
+    if tokio::time::timeout(std::time::Duration::from_secs(5), server_task)
+        .await
+        .is_err()
+    {
         info!("graceful shutdown timed out, forcing exit");
     }
 
