@@ -343,23 +343,15 @@ export default function SettingsPage() {
                             {t('settings.about.title')}
                         </div>
                         <div className="flex w-full items-center justify-between px-3 py-3">
-                            <span className="text-[var(--app-fg)]">{t('settings.about.website')}</span>
-                            <a
-                                href="https://hapi.run"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-[var(--app-link)] hover:underline"
-                            >
-                                hapi.run
-                            </a>
-                        </div>
-                        <div className="flex w-full items-center justify-between px-3 py-3">
                             <span className="text-[var(--app-fg)]">{t('settings.about.appVersion')}</span>
                             <span className="text-[var(--app-hint)]">{__APP_VERSION__}</span>
                         </div>
                         <div className="flex w-full items-center justify-between px-3 py-3">
                             <span className="text-[var(--app-fg)]">{t('settings.about.protocolVersion')}</span>
                             <span className="text-[var(--app-hint)]">{PROTOCOL_VERSION}</span>
+                        </div>
+                        <div className="px-3 py-3">
+                            <span className="text-[var(--app-hint)] text-xs">{t('settings.about.credit')}</span>
                         </div>
                     </div>
                 </div>

@@ -246,9 +246,9 @@ export default {
   'settings.voice.language': 'Voice Language',
   'settings.voice.autoDetect': 'Auto-detect',
   'settings.about.title': 'About',
-  'settings.about.website': 'Website',
   'settings.about.appVersion': 'App Version',
   'settings.about.protocolVersion': 'Protocol Version',
+  'settings.about.credit': 'This project is derived from HAPI.',
 
   // Misc
   'misc.noMachines': 'No machines available',

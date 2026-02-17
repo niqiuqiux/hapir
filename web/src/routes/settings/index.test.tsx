@@ -79,22 +79,10 @@ describe('SettingsPage', () => {
         expect(screen.getAllByText(String(PROTOCOL_VERSION)).length).toBeGreaterThanOrEqual(1)
     })
 
-    it('displays the website link with correct URL and security attributes', () => {
-        renderWithProviders(<SettingsPage />)
-        expect(screen.getAllByText('Website').length).toBeGreaterThanOrEqual(1)
-        const links = screen.getAllByRole('link', { name: 'hapi.run' })
-        expect(links.length).toBeGreaterThanOrEqual(1)
-        const link = links[0]
-        expect(link).toHaveAttribute('href', 'https://hapi.run')
-        expect(link).toHaveAttribute('target', '_blank')
-        expect(link).toHaveAttribute('rel', 'noopener noreferrer')
-    })
-
     it('uses correct i18n keys for About section', () => {
         const spyT = renderWithSpyT(<SettingsPage />)
         const calledKeys = spyT.mock.calls.map((call) => call[0])
         expect(calledKeys).toContain('settings.about.title')
-        expect(calledKeys).toContain('settings.about.website')
         expect(calledKeys).toContain('settings.about.appVersion')
         expect(calledKeys).toContain('settings.about.protocolVersion')
     })
