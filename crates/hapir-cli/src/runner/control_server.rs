@@ -4,7 +4,7 @@ use std::sync::Arc;
 use axum::{extract::State, http::StatusCode, routing::post, Json, Router};
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use super::types::*;
 
@@ -465,28 +465,24 @@ pub async fn do_spawn_session(state: &RunnerState, req: SpawnSessionRequest) -> 
                     let state_for_stderr = state_clone.clone();
                     let sid_for_stderr = sid.clone();
                     tokio::spawn(async move {
-                        use tokio::io::AsyncReadExt;
-                        let mut stderr = stderr;
-                        let mut buf = [0u8; 1024];
+                        use tokio::io::AsyncBufReadExt;
+                        let reader = tokio::io::BufReader::new(stderr);
+                        let mut lines = reader.lines();
                         let mut tail = String::new();
-                        loop {
-                            match stderr.read(&mut buf).await {
-                                Ok(0) => break,
-                                Ok(n) => {
-                                    let chunk = String::from_utf8_lossy(&buf[..n]);
-                                    tail.push_str(&chunk);
-                                    // Keep only last 4000 chars
-                                    if tail.len() > 4000 {
-                                        let start = tail.len() - 4000;
-                                        tail = tail[start..].to_string();
-                                    }
-                                    // Update tracked session
-                                    let mut sessions = state_for_stderr.sessions.lock().await;
-                                    if let Some(s) = sessions.get_mut(&sid_for_stderr) {
-                                        s.stderr_tail = Some(tail.clone());
-                                    }
-                                }
-                                Err(_) => break,
+                        while let Ok(Some(line)) = lines.next_line().await {
+                            // Forward child logs to runner's stderr in real-time
+                            debug!(session_id = %sid_for_stderr, "[child] {}", line);
+                            tail.push_str(&line);
+                            tail.push('\n');
+                            // Keep only last 4000 chars
+                            if tail.len() > 4000 {
+                                let start = tail.len() - 4000;
+                                tail = tail[start..].to_string();
+                            }
+                            // Update tracked session
+                            let mut sessions = state_for_stderr.sessions.lock().await;
+                            if let Some(s) = sessions.get_mut(&sid_for_stderr) {
+                                s.stderr_tail = Some(tail.clone());
                             }
                         }
                     });

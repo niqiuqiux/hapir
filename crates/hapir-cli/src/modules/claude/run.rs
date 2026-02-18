@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 use hapir_shared::schemas::StartedBy as SharedStartedBy;
 
@@ -259,7 +259,7 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
             let q = queue_for_rpc.clone();
             let mode = mode_for_rpc.clone();
             Box::pin(async move {
-                debug!("[runClaude] on-user-message RPC received: {:?}", params);
+                info!("[runClaude] on-user-message RPC received: {:?}", params);
                 let message = params
                     .get("message")
                     .and_then(|v| v.as_str())

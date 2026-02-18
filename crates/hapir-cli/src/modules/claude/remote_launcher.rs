@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use tokio::sync::Mutex;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::agent::loop_base::LoopResult;
 use crate::modules::claude::permission_handler::PermissionHandler;
@@ -28,6 +28,7 @@ pub async fn claude_remote_launcher(
     // 2. Main message processing loop
     loop {
         // Wait for a message from the queue
+        info!("[claudeRemoteLauncher] Waiting for messages from queue...");
         let batch = match session.base.queue.wait_for_messages().await {
             Some(batch) => batch,
             None => {
@@ -78,6 +79,7 @@ pub async fn claude_remote_launcher(
         };
 
         // 3. Spawn the Claude SDK process
+        info!("[claudeRemoteLauncher] Spawning claude SDK for prompt: {}", if prompt.len() > 80 { &prompt[..80] } else { &prompt });
         let mut query_handle = match query::query(&prompt, query_options) {
             Ok(q) => q,
             Err(e) => {
