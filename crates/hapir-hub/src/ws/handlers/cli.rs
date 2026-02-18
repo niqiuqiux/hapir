@@ -77,6 +77,10 @@ pub async fn handle_cli_event(
 ) -> Option<Value> {
     match event {
         "message" => handle_message(conn_id, namespace, data, sync_engine, store, conn_mgr).await,
+        "message-delta" => {
+            handle_message_delta(conn_id, namespace, data, sync_engine, store, conn_mgr).await;
+            None
+        }
         "update-metadata" => handle_update_metadata(namespace, data, store, sync_engine, conn_id, conn_mgr).await,
         "update-state" => handle_update_state(namespace, data, store, sync_engine, conn_id, conn_mgr).await,
         "session-alive" => {
@@ -216,6 +220,51 @@ async fn handle_message(
     }).await;
 
     None
+}
+
+async fn handle_message_delta(
+    conn_id: &str,
+    namespace: &str,
+    data: Value,
+    sync_engine: &Arc<SyncEngine>,
+    store: &Arc<Store>,
+    conn_mgr: &Arc<ConnectionManager>,
+) {
+    let sid = match data.get("sid").and_then(|v| v.as_str()) {
+        Some(s) => s,
+        None => return,
+    };
+
+    if let Err(err) = resolve_session_access(store, sid, namespace) {
+        emit_access_error(conn_mgr, conn_id, "session", sid, err).await;
+        return;
+    }
+
+    let delta = match data.get("delta") {
+        Some(d) => d.clone(),
+        None => return,
+    };
+
+    // Broadcast delta to WebSocket clients (excluding sender)
+    let update = serde_json::json!({
+        "event": "message-delta",
+        "data": {
+            "sessionId": sid,
+            "delta": delta,
+        }
+    });
+    conn_mgr.broadcast_to_session(sid, &update.to_string(), Some(conn_id)).await;
+
+    // Emit delta via SSE
+    if let Ok(delta_data) = serde_json::from_value::<hapir_shared::schemas::MessageDeltaData>(delta) {
+        sync_engine.handle_realtime_event(
+            hapir_shared::schemas::SyncEvent::MessageDelta {
+                session_id: sid.to_string(),
+                namespace: Some(namespace.to_string()),
+                delta: delta_data,
+            }
+        ).await;
+    }
 }
 
 async fn handle_update_metadata(

@@ -184,6 +184,18 @@ impl WsSessionClient {
         })).await;
     }
 
+    /// Send a message delta for streaming.
+    pub async fn send_message_delta(&self, message_id: &str, text: &str, is_final: bool) {
+        self.ws.emit("message-delta", json!({
+            "sid": self.session_id,
+            "delta": {
+                "messageId": message_id,
+                "text": text,
+                "isFinal": is_final,
+            }
+        })).await;
+    }
+
     /// Register an RPC handler scoped to this session.
     pub async fn register_rpc(
         &self,

@@ -7,6 +7,8 @@ use tracing::debug;
 
 use crate::agent::session_base::{AgentSessionBase, SessionMode};
 
+type PermissionResponseSender = tokio::sync::oneshot::Sender<(bool, Option<serde_json::Value>)>;
+
 /// Claude-specific session extending AgentSessionBase.
 ///
 /// Holds Claude-specific fields like env vars, CLI args, MCP server
@@ -21,6 +23,7 @@ pub struct ClaudeSession<Mode: Clone + Send + 'static> {
     pub started_by: StartedBy,
     pub starting_mode: SessionMode,
     pub local_launch_failure: Mutex<Option<LocalLaunchFailure>>,
+    pub pending_permissions: Arc<Mutex<HashMap<String, PermissionResponseSender>>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

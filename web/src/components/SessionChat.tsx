@@ -257,6 +257,7 @@ export function SessionChat(props: {
     const runtime = useHappyRuntime({
         session: props.session,
         blocks: reconciled.blocks,
+        streamingMessages: props.messages.streamingMessages ?? new Map(),
         isSending: props.isSending,
         onSendMessage: handleSend,
         onAbort: handleAbort,

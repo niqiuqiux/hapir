@@ -171,18 +171,35 @@ function extractMessageContent(message: AppendMessage): { text: string; attachme
 export function useHappyRuntime(props: {
     session: Session
     blocks: readonly ChatBlock[]
+    streamingMessages: Map<string, { messageId: string; text: string; createdAt: number }>
     isSending: boolean
     onSendMessage: (text: string, attachments?: AttachmentMetadata[]) => void
     onAbort: () => Promise<void>
     attachmentAdapter?: AttachmentAdapter
     allowSendWhenInactive?: boolean
 }) {
+    // Convert streaming messages to temporary blocks
+    const streamingBlocks: ChatBlock[] = useMemo(() => {
+        if (!props.streamingMessages || props.streamingMessages.size === 0) return []
+        return Array.from(props.streamingMessages.values()).map(sm => ({
+            kind: 'agent-text' as const,
+            id: `streaming:${sm.messageId}`,
+            text: sm.text,
+            createdAt: sm.createdAt,
+        }))
+    }, [props.streamingMessages])
+
+    // Merge regular blocks and streaming blocks
+    const allBlocks = useMemo(() => {
+        return [...props.blocks, ...streamingBlocks]
+    }, [props.blocks, streamingBlocks])
+
     // Use cached message converter for performance optimization
     // This prevents re-converting all messages on every render
     const convertedMessages = useExternalMessageConverter<ChatBlock>({
         callback: toThreadMessageLike,
-        messages: props.blocks as ChatBlock[],
-        isRunning: props.session.thinking,
+        messages: allBlocks as ChatBlock[],
+        isRunning: props.session.thinking || (props.streamingMessages?.size ?? 0) > 0,
     })
 
     const onNew = useCallback(async (message: AppendMessage) => {
@@ -199,7 +216,7 @@ export function useHappyRuntime(props: {
     // useExternalStoreRuntime may use adapter identity for subscriptions
     const adapter = useMemo(() => ({
         isDisabled: props.isSending || (!props.session.active && !props.allowSendWhenInactive),
-        isRunning: props.session.thinking,
+        isRunning: props.session.thinking || (props.streamingMessages?.size ?? 0) > 0,
         messages: convertedMessages,
         onNew,
         onCancel,
@@ -210,6 +227,7 @@ export function useHappyRuntime(props: {
         props.isSending,
         props.allowSendWhenInactive,
         props.session.thinking,
+        props.streamingMessages.size,
         convertedMessages,
         onNew,
         onCancel,

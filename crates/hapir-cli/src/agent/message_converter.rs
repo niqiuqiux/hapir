@@ -35,6 +35,7 @@ pub fn convert_agent_message(message: &AgentMessage) -> Option<CodexMessage> {
         AgentMessage::Text { text } => Some(CodexMessage::Message {
             message: text.clone(),
         }),
+        AgentMessage::TextDelta { .. } => None,
         AgentMessage::ToolCall {
             id,
             name,

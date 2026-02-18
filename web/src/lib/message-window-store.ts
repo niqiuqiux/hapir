@@ -3,6 +3,13 @@ import type { DecryptedMessage, MessageStatus } from '@/types/api'
 import { normalizeDecryptedMessage } from '@/chat/normalize'
 import { mergeMessages } from '@/lib/messages'
 
+type StreamingMessage = {
+    messageId: string
+    localId: string | null
+    text: string
+    createdAt: number
+}
+
 export type MessageWindowState = {
     sessionId: string
     messages: DecryptedMessage[]
@@ -16,6 +23,7 @@ export type MessageWindowState = {
     warning: string | null
     atBottom: boolean
     messagesVersion: number
+    streamingMessages: Map<string, StreamingMessage>
 }
 
 export const VISIBLE_WINDOW_SIZE = 400
@@ -103,12 +111,16 @@ function createState(sessionId: string): InternalState {
         atBottom: true,
         messagesVersion: 0,
         pendingOverflowCount: 0,
+        streamingMessages: new Map(),
     }
 }
 
 function getState(sessionId: string): InternalState {
     const existing = states.get(sessionId)
     if (existing) {
+        if (!existing.streamingMessages) {
+            existing.streamingMessages = new Map()
+        }
         return existing
     }
     const created = createState(sessionId)
@@ -167,6 +179,7 @@ function buildState(
         isLoadingMore?: boolean
         warning?: string | null
         atBottom?: boolean
+        streamingMessages?: Map<string, StreamingMessage>
     }
 ): InternalState {
     const messages = updates.messages ?? prev.messages
@@ -201,6 +214,7 @@ function buildState(
         warning: updates.warning !== undefined ? updates.warning : prev.warning,
         atBottom: updates.atBottom !== undefined ? updates.atBottom : prev.atBottom,
         messagesVersion,
+        streamingMessages: updates.streamingMessages ?? prev.streamingMessages,
     }
 }
 
@@ -403,6 +417,34 @@ export function ingestIncomingMessages(sessionId: string, incoming: DecryptedMes
             pendingOverflowVisibleCount: pendingResult.pendingOverflowVisibleCount,
             warning: pendingResult.warning,
         })
+    })
+}
+
+export function ingestMessageDelta(
+    sessionId: string,
+    delta: { messageId: string; localId?: string | null; text: string; isFinal: boolean; seq?: number | null }
+): void {
+    updateState(sessionId, (prev) => {
+        const streaming = new Map(prev.streamingMessages)
+
+        if (delta.isFinal) {
+            streaming.delete(delta.messageId)
+            return buildState(prev, { streamingMessages: streaming })
+        }
+
+        const existing = streaming.get(delta.messageId)
+        if (existing) {
+            existing.text += delta.text
+        } else {
+            streaming.set(delta.messageId, {
+                messageId: delta.messageId,
+                localId: delta.localId ?? null,
+                text: delta.text,
+                createdAt: Date.now(),
+            })
+        }
+
+        return buildState(prev, { streamingMessages: streaming })
     })
 }
 

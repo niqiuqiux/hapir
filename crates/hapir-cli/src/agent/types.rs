@@ -87,6 +87,12 @@ pub enum ToolResultStatus {
 pub enum AgentMessage {
     #[serde(rename = "text")]
     Text { text: String },
+    #[serde(rename = "text_delta")]
+    TextDelta {
+        message_id: String,
+        text: String,
+        is_final: bool,
+    },
     #[serde(rename = "tool_call")]
     ToolCall {
         id: String,

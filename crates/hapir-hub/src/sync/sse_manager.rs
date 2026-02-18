@@ -212,6 +212,7 @@ fn event_namespace(event: &SyncEvent) -> Option<&str> {
         | SyncEvent::SessionUpdated { namespace, .. }
         | SyncEvent::SessionRemoved { namespace, .. }
         | SyncEvent::MessageReceived { namespace, .. }
+        | SyncEvent::MessageDelta { namespace, .. }
         | SyncEvent::MachineUpdated { namespace, .. }
         | SyncEvent::Toast { namespace, .. }
         | SyncEvent::ConnectionChanged { namespace, .. } => namespace.as_deref(),
@@ -223,7 +224,8 @@ fn event_session_id(event: &SyncEvent) -> Option<&str> {
         SyncEvent::SessionAdded { session_id, .. }
         | SyncEvent::SessionUpdated { session_id, .. }
         | SyncEvent::SessionRemoved { session_id, .. }
-        | SyncEvent::MessageReceived { session_id, .. } => Some(session_id.as_str()),
+        | SyncEvent::MessageReceived { session_id, .. }
+        | SyncEvent::MessageDelta { session_id, .. } => Some(session_id.as_str()),
         _ => None,
     }
 }

@@ -59,6 +59,7 @@ fn generate_ts_types(types_dir: &Path) {
         SyncEvent,
         ToastData,
         ConnectionChangedData,
+        MessageDeltaData,
         SummaryText,
         TodoProgress,
         SessionSummaryMetadata,

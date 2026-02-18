@@ -281,6 +281,7 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
         started_by,
         starting_mode,
         local_launch_failure: Mutex::new(None),
+        pending_permissions: Arc::new(Mutex::new(HashMap::new())),
     });
 
     // Register common RPC handlers (bash, files, directories, git, ripgrep)
@@ -379,6 +380,59 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
                         "modelMode": m.model,
                     }
                 })
+            })
+        })
+        .await;
+
+    // Register permission RPC handler
+    let cs_for_permission = claude_session.clone();
+    ws_client
+        .register_rpc("permission", move |params| {
+            let cs = cs_for_permission.clone();
+            Box::pin(async move {
+                debug!("[runClaude] permission RPC received: {:?}", params);
+
+                let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                let approved = params.get("approved").and_then(|v| v.as_bool()).unwrap_or(false);
+                let updated_input = params.get("updatedInput").cloned();
+
+                // Find and respond to pending permission
+                if let Some(tx) = cs.pending_permissions.lock().await.remove(id) {
+                    let _ = tx.send((approved, updated_input));
+
+                    // Update agent state to move request to completedRequests
+                    let id_clone = id.to_string();
+                    let status = if approved { "approved" } else { "denied" };
+                    let completed_at = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_millis() as f64;
+
+                    let _ = cs.base.ws_client.update_agent_state(move |mut state| {
+                        // Remove from requests
+                        if let Some(requests) = state.get_mut("requests").and_then(|v| v.as_object_mut()) {
+                            if let Some(request) = requests.remove(&id_clone) {
+                                // Add to completedRequests
+                                let completed_requests = state
+                                    .get_mut("completedRequests")
+                                    .and_then(|v| v.as_object_mut())
+                                    .map(|obj| obj.clone())
+                                    .unwrap_or_default();
+
+                                let mut updated_completed = completed_requests.clone();
+                                let mut completed_request = request.as_object().cloned().unwrap_or_default();
+                                completed_request.insert("status".to_string(), serde_json::json!(status));
+                                completed_request.insert("completedAt".to_string(), serde_json::json!(completed_at));
+
+                                updated_completed.insert(id_clone.clone(), serde_json::json!(completed_request));
+                                state["completedRequests"] = serde_json::json!(updated_completed);
+                            }
+                        }
+                        state
+                    }).await;
+                }
+
+                serde_json::json!({"ok": true})
             })
         })
         .await;

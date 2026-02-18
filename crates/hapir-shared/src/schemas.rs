@@ -324,6 +324,15 @@ pub enum SyncEvent {
         namespace: Option<String>,
         message: DecryptedMessage,
     },
+    #[serde(rename = "message-delta")]
+    #[ts(rename = "message-delta")]
+    MessageDelta {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        namespace: Option<String>,
+        delta: MessageDeltaData,
+    },
     #[serde(rename = "machine-updated")]
     #[ts(rename = "machine-updated")]
     MachineUpdated {
@@ -370,6 +379,20 @@ pub struct ConnectionChangedData {
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subscription_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+#[ts(rename_all = "camelCase")]
+pub struct MessageDeltaData {
+    pub message_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub local_id: Option<String>,
+    pub text: String,
+    pub is_final: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seq: Option<f64>,
 }
 
 // --- Tests ---

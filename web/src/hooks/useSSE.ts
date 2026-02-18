@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { isObject } from '@/lib/protocol'
 import type { SyncEvent } from '@/types/api'
 import { queryKeys } from '@/lib/query-keys'
-import { clearMessageWindow, ingestIncomingMessages } from '@/lib/message-window-store'
+import { clearMessageWindow, ingestIncomingMessages, ingestMessageDelta } from '@/lib/message-window-store'
 
 type SSESubscription = {
     all?: boolean
@@ -129,6 +129,10 @@ export function useSSE(options: {
 
             if (event.type === 'message-received') {
                 ingestIncomingMessages(event.sessionId, [event.message])
+            }
+
+            if (event.type === 'message-delta') {
+                ingestMessageDelta(event.sessionId, event.delta)
             }
 
             if (event.type === 'session-added' || event.type === 'session-updated' || event.type === 'session-removed') {

@@ -120,6 +120,7 @@ fn set_event_namespace(event: &mut SyncEvent, namespace: Option<String>) {
         | SyncEvent::SessionUpdated { namespace: ns, .. }
         | SyncEvent::SessionRemoved { namespace: ns, .. }
         | SyncEvent::MessageReceived { namespace: ns, .. }
+        | SyncEvent::MessageDelta { namespace: ns, .. }
         | SyncEvent::MachineUpdated { namespace: ns, .. }
         | SyncEvent::Toast { namespace: ns, .. }
         | SyncEvent::ConnectionChanged { namespace: ns, .. } => {

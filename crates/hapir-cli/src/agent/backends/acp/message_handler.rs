@@ -94,6 +94,8 @@ fn normalize_plan_entries(entries: &Value) -> Vec<PlanItem> {
 pub struct AcpMessageHandler {
     tool_calls: HashMap<String, ToolCallInfo>,
     buffered_text: String,
+    streaming_message_id: Option<String>,
+    last_sent_text: String,
     on_message: Box<dyn Fn(AgentMessage) + Send + Sync>,
 }
 
@@ -110,6 +112,8 @@ impl AcpMessageHandler {
         Self {
             tool_calls: HashMap::new(),
             buffered_text: String::new(),
+            streaming_message_id: None,
+            last_sent_text: String::new(),
             on_message: Box::new(on_message),
         }
     }
@@ -123,31 +127,47 @@ impl AcpMessageHandler {
         (self.on_message)(AgentMessage::Text { text });
     }
 
-    /// Append a text chunk with deduplication.
-    ///
-    /// - If new text equals buffered: skip.
-    /// - If new text starts with buffered: replace (it's a superset).
-    /// - If buffered starts with new text: skip (buffered is already longer).
-    /// - Otherwise: concatenate.
-    fn append_text_chunk(&mut self, text: &str) {
+    /// Send a text delta immediately for streaming.
+    fn send_text_delta(&mut self, text: &str) {
         if text.is_empty() {
             return;
         }
-        if self.buffered_text.is_empty() {
-            self.buffered_text = text.to_string();
-            return;
+
+        if self.streaming_message_id.is_none() {
+            self.streaming_message_id = Some(uuid::Uuid::new_v4().to_string());
+            self.last_sent_text.clear();
         }
-        if text == self.buffered_text {
-            return;
+
+        let message_id = self.streaming_message_id.as_ref().unwrap().clone();
+
+        let delta_text = if text.starts_with(&self.last_sent_text) {
+            &text[self.last_sent_text.len()..]
+        } else {
+            text
+        };
+
+        if !delta_text.is_empty() {
+            (self.on_message)(AgentMessage::TextDelta {
+                message_id,
+                text: delta_text.to_string(),
+                is_final: false,
+            });
+            self.last_sent_text = text.to_string();
         }
-        if text.starts_with(&self.buffered_text) {
-            self.buffered_text = text.to_string();
-            return;
+
+        self.buffered_text = text.to_string();
+    }
+
+    /// Finalize the current streaming message.
+    fn finalize_stream(&mut self) {
+        if let Some(message_id) = self.streaming_message_id.take() {
+            (self.on_message)(AgentMessage::TextDelta {
+                message_id,
+                text: self.buffered_text.clone(),
+                is_final: true,
+            });
+            self.last_sent_text.clear();
         }
-        if self.buffered_text.starts_with(text) {
-            return;
-        }
-        self.buffered_text.push_str(text);
     }
 
     /// Process a single session update notification.
@@ -166,7 +186,7 @@ impl AcpMessageHandler {
             constants::AGENT_MESSAGE_CHUNK => {
                 if let Some(content) = obj.get("content") {
                     if let Some(text) = extract_text_content(content) {
-                        self.append_text_chunk(text);
+                        self.send_text_delta(text);
                     }
                 }
             }
@@ -174,14 +194,17 @@ impl AcpMessageHandler {
                 // Silently ignored
             }
             constants::TOOL_CALL => {
+                self.finalize_stream();
                 self.flush_text();
                 self.handle_tool_call(update);
             }
             constants::TOOL_CALL_UPDATE => {
+                self.finalize_stream();
                 self.flush_text();
                 self.handle_tool_call_update(update);
             }
             constants::PLAN => {
+                self.finalize_stream();
                 self.flush_text();
                 if let Some(entries) = obj.get("entries") {
                     let items = normalize_plan_entries(entries);
