@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use hapir_shared::modes::{ModelMode, PermissionMode};
-use hapir_shared::schemas::AnswersFormat;
+use hapir_shared::schemas::{AnswersFormat, AttachmentMetadata};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::oneshot;
@@ -188,9 +188,10 @@ impl RpcGateway {
         })).await
     }
 
-    pub async fn send_user_message(&self, session_id: &str, message: &str) -> anyhow::Result<Value> {
+    pub async fn send_user_message(&self, session_id: &str, message: &str, attachments: Option<&[AttachmentMetadata]>) -> anyhow::Result<Value> {
         self.session_rpc(session_id, "on-user-message", serde_json::json!({
             "message": message,
+            "attachments": attachments,
         })).await
     }
 

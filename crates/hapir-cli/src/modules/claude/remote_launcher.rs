@@ -45,7 +45,7 @@ pub async fn claude_remote_launcher(
             "[claudeRemoteLauncher] Processing message (isolate={}): {}",
             is_isolate,
             if prompt.len() > 100 {
-                format!("{}...", &prompt[..100])
+                format!("{}...", &prompt[..prompt.floor_char_boundary(100)])
             } else {
                 prompt.clone()
             }
@@ -79,7 +79,7 @@ pub async fn claude_remote_launcher(
         };
 
         // Spawn the Claude SDK process
-        info!("[claudeRemoteLauncher] Spawning claude SDK for prompt: {}", if prompt.len() > 80 { &prompt[..80] } else { &prompt });
+        info!("[claudeRemoteLauncher] Spawning claude SDK for prompt: {}", if prompt.len() > 80 { format!("{}...", &prompt[..prompt.floor_char_boundary(80)]) } else { prompt.clone() });
         let mut query_handle = match query::query(&prompt, query_options) {
             Ok(q) => q,
             Err(e) => {

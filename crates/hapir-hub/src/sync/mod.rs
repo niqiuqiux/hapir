@@ -218,7 +218,7 @@ impl SyncEngine {
         MessageService::send_message(&self.store, &self.publisher, session_id, namespace, text, local_id, attachments, sent_from)?;
 
         // Notify the session process via RPC so it can pick up the message
-        match self.rpc_gateway.send_user_message(session_id, text).await {
+        match self.rpc_gateway.send_user_message(session_id, text, attachments).await {
             Ok(resp) => tracing::debug!(session_id, ?resp, "send_message: RPC delivered"),
             Err(e) => tracing::warn!(session_id, error = %e, "send_message: failed to deliver via RPC"),
         }

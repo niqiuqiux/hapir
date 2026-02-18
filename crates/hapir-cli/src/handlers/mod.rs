@@ -4,6 +4,9 @@ pub mod files;
 pub mod git;
 pub mod path_security;
 pub mod ripgrep;
+pub mod skills;
+pub mod slash_commands;
+pub mod uploads;
 
 use crate::rpc::RpcHandlerManager;
 
@@ -14,4 +17,7 @@ pub async fn register_all_handlers(rpc: &RpcHandlerManager, working_directory: &
     directories::register_directory_handlers(rpc, working_directory).await;
     git::register_git_handlers(rpc, working_directory).await;
     ripgrep::register_ripgrep_handlers(rpc, working_directory).await;
+    uploads::register_upload_handlers(rpc, working_directory).await;
+    slash_commands::register_slash_command_handlers(rpc, working_directory).await;
+    skills::register_skills_handlers(rpc, working_directory).await;
 }

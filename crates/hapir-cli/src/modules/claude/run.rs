@@ -7,13 +7,14 @@ use tracing::{debug, error, info, warn};
 
 use hapir_shared::schemas::StartedBy as SharedStartedBy;
 
-use crate::agent::loop_base::{LoopOptions, run_local_remote_session};
+use crate::agent::loop_base::{run_local_remote_session, LoopOptions};
 use crate::agent::runner_lifecycle::{
     create_mode_change_handler, set_controlled_by_user, RunnerLifecycle, RunnerLifecycleOptions,
 };
 use crate::agent::session_base::{AgentSessionBase, AgentSessionBaseOptions, SessionMode};
 use crate::agent::session_factory::{bootstrap_session, SessionBootstrapOptions};
 use crate::config::Configuration;
+use crate::handlers::uploads;
 use crate::modules::claude::hook_server::start_hook_server;
 use crate::modules::claude::session::{ClaudeSession, StartedBy};
 use crate::utils::message_queue::MessageQueue2;
@@ -106,9 +107,7 @@ fn resolve_starting_mode(options: &StartOptions, started_by: StartedBy) -> Sessi
 /// Bootstraps the session, starts the hook server, creates the message
 /// queue, and enters the main local/remote loop.
 pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
-    let working_directory = std::env::current_dir()?
-        .to_string_lossy()
-        .to_string();
+    let working_directory = std::env::current_dir()?.to_string_lossy().to_string();
 
     let started_by = resolve_started_by(options.started_by.as_deref());
     let shared_started_by = resolve_shared_started_by(options.started_by.as_deref());
@@ -167,7 +166,10 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
             let client = ws_for_hook.clone();
             let claude_sid = sid;
             tokio::spawn(async move {
-                debug!("[runClaude] Hook server received Claude session ID: {}", claude_sid);
+                debug!(
+                    "[runClaude] Hook server received Claude session ID: {}",
+                    claude_sid
+                );
                 let csid = claude_sid.clone();
                 let _ = client
                     .update_metadata(move |mut metadata| {
@@ -281,6 +283,17 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
         local_launch_failure: Mutex::new(None),
     });
 
+    // Register common RPC handlers (bash, files, directories, git, ripgrep)
+    {
+        let rpc_mgr = crate::rpc::RpcHandlerManager::new("_tmp_");
+        crate::handlers::register_all_handlers(&rpc_mgr, &working_directory).await;
+        for (method, handler) in rpc_mgr.drain_handlers().await {
+            ws_client
+                .register_rpc(&method, move |params| handler(params))
+                .await;
+        }
+    }
+
     // Register onUserMessage RPC handler
     let queue_for_rpc = queue.clone();
     let current_mode = Arc::new(Mutex::new(initial_mode));
@@ -291,11 +304,34 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
             let mode = mode_for_rpc.clone();
             Box::pin(async move {
                 info!("[runClaude] on-user-message RPC received: {:?}", params);
-                let message = params
+                let text = params
                     .get("message")
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
+
+                // Format attachments as @path references prepended to the message
+                let attachment_refs: Vec<String> = params
+                    .get("attachments")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|a| a.get("path").and_then(|p| p.as_str()))
+                            .map(|p| format!("@{p}"))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                let message = if attachment_refs.is_empty() {
+                    text.clone()
+                } else {
+                    let refs = attachment_refs.join(" ");
+                    if text.is_empty() {
+                        refs
+                    } else {
+                        format!("{refs}\n\n{text}")
+                    }
+                };
 
                 if message.is_empty() {
                     return serde_json::json!({"ok": false, "reason": "empty message"});
@@ -306,7 +342,10 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
                 // Handle /compact and /clear as isolate-and-clear
                 let trimmed = message.trim();
                 if trimmed == "/compact" || trimmed == "/clear" {
-                    debug!("[runClaude] Received {} command, isolate-and-clear", trimmed);
+                    debug!(
+                        "[runClaude] Received {} command, isolate-and-clear",
+                        trimmed
+                    );
                     q.push_isolate_and_clear(message, current).await;
                 } else {
                     q.push(message, current).await;
@@ -330,11 +369,16 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
                     debug!("[runClaude] Permission mode changed to: {}", pm);
                     m.permission_mode = Some(pm.to_string());
                 }
-                if let Some(model) = params.get("model").and_then(|v| v.as_str()) {
-                    debug!("[runClaude] Model changed to: {}", model);
-                    m.model = Some(model.to_string());
+                if let Some(mm) = params.get("modelMode").and_then(|v| v.as_str()) {
+                    debug!("[runClaude] Model mode changed to: {}", mm);
+                    m.model = Some(mm.to_string());
                 }
-                serde_json::json!({"ok": true})
+                serde_json::json!({
+                    "applied": {
+                        "permissionMode": m.permission_mode,
+                        "modelMode": m.model,
+                    }
+                })
             })
         })
         .await;
@@ -383,6 +427,9 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
     if let Err(e) = std::fs::remove_file(&claude_session.hook_settings_path) {
         debug!("[runClaude] Failed to remove hook settings file: {}", e);
     }
+
+    // Clean up upload directory
+    uploads::cleanup_upload_dir(&session_id).await;
 
     // Cleanup lifecycle
     lifecycle.cleanup().await;
