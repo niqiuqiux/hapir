@@ -327,17 +327,10 @@ pub async fn do_spawn_session(state: &RunnerState, req: SpawnSessionRequest) -> 
         "spawning session process"
     );
 
-    // Build args
+    // Build args — hapir-recognized flags must come before --resume,
+    // because --resume is unknown to ClaudeArgs and triggers trailing_var_arg
+    // capture, swallowing all subsequent flags into passthrough_args.
     let mut args = vec![agent_cmd.to_string()];
-    if let Some(ref resume_id) = req.resume_session_id {
-        if agent_cmd == "codex" {
-            args.push("resume".to_string());
-            args.push(resume_id.clone());
-        } else {
-            args.push("--resume".to_string());
-            args.push(resume_id.clone());
-        }
-    }
     args.extend(["--hapir-starting-mode".to_string(), "remote".to_string(), "--started-by".to_string(), "runner".to_string()]);
     if let Some(ref model) = req.model
         && agent_cmd != "opencode"
@@ -347,6 +340,16 @@ pub async fn do_spawn_session(state: &RunnerState, req: SpawnSessionRequest) -> 
     }
     if req.yolo == Some(true) {
         args.push("--yolo".to_string());
+    }
+    // --resume must be last: it's a passthrough arg for the external agent CLI
+    if let Some(ref resume_id) = req.resume_session_id {
+        if agent_cmd == "codex" {
+            args.push("resume".to_string());
+            args.push(resume_id.clone());
+        } else {
+            args.push("--resume".to_string());
+            args.push(resume_id.clone());
+        }
     }
 
     // Build command — capture stderr for debugging, detach on Unix
