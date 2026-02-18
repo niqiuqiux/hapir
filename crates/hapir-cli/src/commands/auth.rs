@@ -47,7 +47,7 @@ fn show_status(config: &Configuration) -> anyhow::Result<()> {
         println!();
         println!("  Token not configured. To get your token:");
         println!("    1. Check the server startup logs (first run shows generated token)");
-        println!("    2. Read ~/.hapi/settings.json on the server");
+        println!("    2. Read ~/.hapir/settings.json on the server");
         println!("    3. Ask your server administrator (if token is set via env var)");
         println!();
         println!("  Then run: hapir auth login");

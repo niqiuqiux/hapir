@@ -112,12 +112,12 @@ impl SessionCache {
         let mut stored = match sessions::get_session(&store.conn(), session_id) {
             Some(s) => s,
             None => {
-                if self.sessions.remove(session_id).is_some() {
+                if let Some(removed) = self.sessions.remove(session_id) {
                     self.last_broadcast_at.remove(session_id);
                     self.todo_backfill_attempted.remove(session_id);
                     publisher.emit(SyncEvent::SessionRemoved {
                         session_id: session_id.to_string(),
-                        namespace: None,
+                        namespace: Some(removed.namespace),
                     });
                 }
                 return None;
@@ -201,13 +201,13 @@ impl SessionCache {
         if is_update {
             publisher.emit(SyncEvent::SessionUpdated {
                 session_id: session_id.to_string(),
-                namespace: None,
+                namespace: Some(session.namespace.clone()),
                 data: event_data,
             });
         } else {
             publisher.emit(SyncEvent::SessionAdded {
                 session_id: session_id.to_string(),
-                namespace: None,
+                namespace: Some(session.namespace.clone()),
                 data: event_data,
             });
         }
@@ -282,7 +282,7 @@ impl SessionCache {
             });
             publisher.emit(SyncEvent::SessionUpdated {
                 session_id: sid.to_string(),
-                namespace: None,
+                namespace: Some(session.namespace.clone()),
                 data: Some(data),
             });
         }
@@ -315,7 +315,7 @@ impl SessionCache {
 
         publisher.emit(SyncEvent::SessionUpdated {
             session_id: sid.to_string(),
-            namespace: None,
+            namespace: Some(session.namespace.clone()),
             data: Some(serde_json::json!({"active": false, "thinking": false})),
         });
     }
@@ -339,7 +339,7 @@ impl SessionCache {
                 session.thinking = false;
                 publisher.emit(SyncEvent::SessionUpdated {
                     session_id: id,
-                    namespace: None,
+                    namespace: Some(session.namespace.clone()),
                     data: Some(serde_json::json!({"active": false})),
                 });
             }
@@ -372,7 +372,7 @@ impl SessionCache {
         let data = serde_json::to_value(&*session).ok();
         publisher.emit(SyncEvent::SessionUpdated {
             session_id: session_id.to_string(),
-            namespace: None,
+            namespace: Some(session.namespace.clone()),
             data,
         });
     }

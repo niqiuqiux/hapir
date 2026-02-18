@@ -23,7 +23,7 @@ impl Configuration {
             .unwrap_or_else(|_| "http://localhost:3006".into());
         let cli_api_token = std::env::var("CLI_API_TOKEN").unwrap_or_default();
 
-        // Home directory: HAPIR_HOME env > ~/.hapi
+        // Home directory: HAPIR_HOME env > ~/.hapir
         let home_dir = if let Ok(home) = std::env::var("HAPIR_HOME") {
             // Expand ~ to home directory
             if home.starts_with('~') {

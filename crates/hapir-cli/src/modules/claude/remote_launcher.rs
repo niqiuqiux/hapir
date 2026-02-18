@@ -22,10 +22,10 @@ pub async fn claude_remote_launcher(
     let working_directory = session.base.path.clone();
     debug!("[claudeRemoteLauncher] Starting in {}", working_directory);
 
-    // 1. Create PermissionHandler
+    // Create PermissionHandler
     let permission_handler = Arc::new(Mutex::new(PermissionHandler::new()));
 
-    // 2. Main message processing loop
+    // Main message processing loop
     loop {
         // Wait for a message from the queue
         info!("[claudeRemoteLauncher] Waiting for messages from queue...");
@@ -78,7 +78,7 @@ pub async fn claude_remote_launcher(
             ..Default::default()
         };
 
-        // 3. Spawn the Claude SDK process
+        // Spawn the Claude SDK process
         info!("[claudeRemoteLauncher] Spawning claude SDK for prompt: {}", if prompt.len() > 80 { &prompt[..80] } else { &prompt });
         let mut query_handle = match query::query(&prompt, query_options) {
             Ok(q) => q,
@@ -88,8 +88,20 @@ pub async fn claude_remote_launcher(
                     .base
                     .ws_client
                     .send_message(serde_json::json!({
-                        "type": "error",
-                        "message": format!("Failed to spawn claude SDK: {}", e),
+                        "role": "assistant",
+                        "content": {
+                            "type": "output",
+                            "data": {
+                                "type": "assistant",
+                                "message": {
+                                    "role": "assistant",
+                                    "content": [{
+                                        "type": "text",
+                                        "text": format!("Failed to spawn claude SDK: {}", e),
+                                    }]
+                                }
+                            }
+                        }
                     }))
                     .await;
                 // Continue the loop to retry on next message
@@ -100,7 +112,7 @@ pub async fn claude_remote_launcher(
         // Notify thinking state
         session.base.on_thinking_change(true).await;
 
-        // 4. Process SDK messages from the Claude process
+        // Process SDK messages from the Claude process
         let should_switch = false;
         while let Some(msg) = query_handle.next_message().await {
             match msg {
@@ -142,17 +154,28 @@ pub async fn claude_remote_launcher(
                     message,
                     parent_tool_use_id,
                 } => {
-                    // Forward assistant message to the session
+                    debug!(
+                        "[claudeRemoteLauncher] Assistant message: role={}, content_blocks={}, parent={:?}",
+                        message.role,
+                        message.content.len(),
+                        parent_tool_use_id
+                    );
                     session
                         .base
                         .ws_client
                         .send_message(serde_json::json!({
-                            "type": "assistant",
-                            "message": {
-                                "role": message.role,
-                                "content": message.content,
-                            },
-                            "parentToolUseId": parent_tool_use_id,
+                            "role": message.role,
+                            "content": {
+                                "type": "output",
+                                "data": {
+                                    "type": "assistant",
+                                    "parentUuid": parent_tool_use_id,
+                                    "message": {
+                                        "role": message.role,
+                                        "content": message.content,
+                                    }
+                                }
+                            }
                         }))
                         .await;
                 }
@@ -160,17 +183,26 @@ pub async fn claude_remote_launcher(
                     message,
                     parent_tool_use_id,
                 } => {
-                    // Forward user/tool-result message
+                    debug!(
+                        "[claudeRemoteLauncher] User message: role={}, parent={:?}",
+                        message.role, parent_tool_use_id
+                    );
                     session
                         .base
                         .ws_client
                         .send_message(serde_json::json!({
-                            "type": "user",
-                            "message": {
-                                "role": message.role,
-                                "content": message.content,
-                            },
-                            "parentToolUseId": parent_tool_use_id,
+                            "role": message.role,
+                            "content": {
+                                "type": "output",
+                                "data": {
+                                    "type": "user",
+                                    "parentUuid": parent_tool_use_id,
+                                    "message": {
+                                        "role": message.role,
+                                        "content": message.content,
+                                    }
+                                }
+                            }
                         }))
                         .await;
                 }
@@ -181,50 +213,54 @@ pub async fn claude_remote_launcher(
                     num_turns,
                     total_cost_usd,
                     duration_ms,
-                    duration_api_ms,
                     is_error,
                     session_id: result_session_id,
                     ..
                 } => {
-                    debug!(
-                        "[claudeRemoteLauncher] Result: subtype={}, turns={}, error={}",
-                        subtype, num_turns, is_error
+                    info!(
+                        "[claudeRemoteLauncher] Result: subtype={}, turns={}, cost={}, duration={}ms, error={}",
+                        subtype, num_turns, total_cost_usd, duration_ms, is_error
                     );
-                    session
-                        .base
-                        .ws_client
-                        .send_message(serde_json::json!({
-                            "type": "result",
-                            "subtype": subtype,
-                            "result": result,
-                            "numTurns": num_turns,
-                            "totalCostUsd": total_cost_usd,
-                            "durationMs": duration_ms,
-                            "durationApiMs": duration_api_ms,
-                            "isError": is_error,
-                            "sessionId": result_session_id,
-                        }))
-                        .await;
+                    // If the result is an error, send it as an assistant message so the user sees it
+                    if is_error {
+                        if let Some(ref error_text) = result {
+                            session
+                                .base
+                                .ws_client
+                                .send_message(serde_json::json!({
+                                    "role": "assistant",
+                                    "content": {
+                                        "type": "output",
+                                        "data": {
+                                            "type": "assistant",
+                                            "message": {
+                                                "role": "assistant",
+                                                "content": [{
+                                                    "type": "text",
+                                                    "text": error_text,
+                                                }]
+                                            }
+                                        }
+                                    }
+                                }))
+                                .await;
+                        }
+                    }
+                    // Store session ID from result
+                    if !result_session_id.is_empty() {
+                        session.base.on_session_found(&result_session_id).await;
+                    }
                 }
                 SdkMessage::ControlRequest {
                     request_id,
                     request,
                 } => {
                     debug!(
-                        "[claudeRemoteLauncher] Permission request: id={}, subtype={}",
-                        request_id, request.subtype
+                        "[claudeRemoteLauncher] Permission request: id={}, subtype={}, tool={}",
+                        request_id, request.subtype, request.tool_name.as_deref().unwrap_or("none")
                     );
-                    session
-                        .base
-                        .ws_client
-                        .send_message(serde_json::json!({
-                            "type": "permission-request",
-                            "requestId": request_id,
-                            "toolName": request.tool_name,
-                            "input": request.input,
-                            "subtype": request.subtype,
-                        }))
-                        .await;
+                    // TODO: Forward permission requests to frontend for interactive approval.
+                    // For now, just log them — they are not chat messages.
                 }
                 SdkMessage::ControlResponse { response } => {
                     debug!(
@@ -247,7 +283,7 @@ pub async fn claude_remote_launcher(
             }
         }
 
-        // 5. Process exited - update thinking state
+        // Process exited - update thinking state
         session.base.on_thinking_change(false).await;
         session.consume_one_time_flags().await;
 

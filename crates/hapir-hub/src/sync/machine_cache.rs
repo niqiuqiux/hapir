@@ -127,10 +127,10 @@ impl MachineCache {
         let stored = match store_machines::get_machine(&store.conn(), machine_id) {
             Some(m) => m,
             None => {
-                if self.machines.remove(machine_id).is_some() {
+                if let Some(removed) = self.machines.remove(machine_id) {
                     publisher.emit(SyncEvent::MachineUpdated {
                         machine_id: machine_id.to_string(),
-                        namespace: None,
+                        namespace: Some(removed.namespace),
                         data: None,
                     });
                 }
@@ -179,10 +179,11 @@ impl MachineCache {
         };
 
         self.machines.insert(machine_id.to_string(), machine.clone());
+        let ns = machine.namespace.clone();
         let data = serde_json::to_value(&machine).ok();
         publisher.emit(SyncEvent::MachineUpdated {
             machine_id: machine_id.to_string(),
-            namespace: None,
+            namespace: Some(ns),
             data,
         });
 
@@ -229,8 +230,8 @@ impl MachineCache {
             self.last_broadcast_at.insert(machine_id.to_string(), now);
             publisher.emit(SyncEvent::MachineUpdated {
                 machine_id: machine_id.to_string(),
-                namespace: None,
-                data: Some(serde_json::json!({"activeAt": machine.active_at})),
+                namespace: Some(machine.namespace.clone()),
+                data: Some(serde_json::json!({"active": true, "activeAt": machine.active_at})),
             });
         }
     }
@@ -260,7 +261,7 @@ impl MachineCache {
                 machine.active = false;
                 publisher.emit(SyncEvent::MachineUpdated {
                     machine_id: machine_id.to_string(),
-                    namespace: None,
+                    namespace: Some(machine.namespace.clone()),
                     data: Some(serde_json::json!({"active": false})),
                 });
             }

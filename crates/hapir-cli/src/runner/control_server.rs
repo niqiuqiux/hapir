@@ -459,7 +459,7 @@ pub async fn do_spawn_session(state: &RunnerState, req: SpawnSessionRequest) -> 
             let sid = session_id.clone();
             let codex_temp_dir_clone = codex_temp_dir.clone();
             tokio::spawn(async move {
-                // Capture stderr (last 4000 chars)
+                // Capture stderr and forward child logs in real-time
                 let stderr = child.stderr.take();
                 if let Some(stderr) = stderr {
                     let state_for_stderr = state_clone.clone();
@@ -470,7 +470,6 @@ pub async fn do_spawn_session(state: &RunnerState, req: SpawnSessionRequest) -> 
                         let mut lines = reader.lines();
                         let mut tail = String::new();
                         while let Ok(Some(line)) = lines.next_line().await {
-                            // Forward child logs to runner's stderr in real-time
                             debug!(session_id = %sid_for_stderr, "[child] {}", line);
                             tail.push_str(&line);
                             tail.push('\n');

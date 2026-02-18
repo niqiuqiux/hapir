@@ -119,7 +119,7 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
         working_directory, started_by, starting_mode
     );
 
-    // 1. Bootstrap session
+    // Bootstrap session
     let config = Configuration::create()?;
     let bootstrap = bootstrap_session(
         SessionBootstrapOptions {
@@ -160,19 +160,20 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
         }
     }
 
-    // 2. Start hook server for receiving Claude session notifications
+    // Start hook server for receiving Claude session notifications
     let ws_for_hook = ws_client.clone();
     let hook_server = start_hook_server(
         Arc::new(move |sid, _data| {
             let client = ws_for_hook.clone();
-            let session_id_found = sid;
+            let claude_sid = sid;
             tokio::spawn(async move {
-                debug!("[runClaude] Hook server received session ID: {}", session_id_found);
-                client
-                    .send_message(serde_json::json!({
-                        "type": "session-found",
-                        "sessionId": session_id_found,
-                    }))
+                debug!("[runClaude] Hook server received Claude session ID: {}", claude_sid);
+                let csid = claude_sid.clone();
+                let _ = client
+                    .update_metadata(move |mut metadata| {
+                        metadata.claude_session_id = Some(csid);
+                        metadata
+                    })
                     .await;
             });
         }),
@@ -181,10 +182,49 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
     .await?;
 
     let hook_port = hook_server.port;
-    let _hook_token = hook_server.token.clone();
+    let hook_token = hook_server.token.clone();
     debug!("[runClaude] Hook server started on port {}", hook_port);
 
-    // 3. Create RunnerLifecycle and register process handlers
+    // Write hook settings file so `claude --settings <path>` can find it.
+    // The SessionStart hook calls back to our hook server with the session ID.
+    let hook_settings_path = format!(
+        "{}/.hapir/claude-hook-settings-{}.json",
+        dirs_next::home_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default(),
+        session_id
+    );
+    {
+        let exe_path = std::env::current_exe()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| "hapi".to_string());
+        let settings_json = serde_json::json!({
+            "hooks": {
+                "SessionStart": [
+                    {
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": format!(
+                                    "{} hook-forwarder --port {} --token {}",
+                                    exe_path, hook_port, hook_token
+                                )
+                            }
+                        ]
+                    }
+                ]
+            }
+        });
+        if let Some(parent) = std::path::Path::new(&hook_settings_path).parent() {
+            std::fs::create_dir_all(parent).ok();
+        }
+        match std::fs::write(&hook_settings_path, settings_json.to_string()) {
+            Ok(_) => debug!("[runClaude] Wrote hook settings to {}", hook_settings_path),
+            Err(e) => warn!("[runClaude] Failed to write hook settings: {}", e),
+        }
+    }
+
+    // Create RunnerLifecycle and register process handlers
     let ws_for_lifecycle = ws_client.clone();
     let lifecycle = RunnerLifecycle::new(RunnerLifecycleOptions {
         ws_client: ws_for_lifecycle,
@@ -195,10 +235,10 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
     });
     lifecycle.register_process_handlers();
 
-    // 4. Set controlledByUser on session
+    // Set controlledByUser on session
     set_controlled_by_user(&ws_client, starting_mode).await;
 
-    // 5. Create MessageQueue2<EnhancedMode> with mode hash
+    // Create MessageQueue2<EnhancedMode> with mode hash
     let initial_mode = EnhancedMode {
         permission_mode: options.permission_mode.clone(),
         model: options.model.clone(),
@@ -207,7 +247,7 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
 
     let queue = Arc::new(MessageQueue2::new(compute_mode_hash));
 
-    // 6. Create AgentSessionBase
+    // Create AgentSessionBase
     let on_mode_change = create_mode_change_handler(ws_client.clone());
     let session_base = AgentSessionBase::new(AgentSessionBaseOptions {
         api: api.clone(),
@@ -228,16 +268,7 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
         model_mode: bootstrap.session_info.model_mode,
     });
 
-    // 7. Build hook settings path for Claude CLI
-    let hook_settings_path = format!(
-        "{}/.hapi/claude-hook-settings-{}.json",
-        dirs_next::home_dir()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_default(),
-        session_id
-    );
-
-    // 8. Create ClaudeSession wrapping the base
+    // Create ClaudeSession wrapping the base
     let claude_session = Arc::new(ClaudeSession {
         base: session_base.clone(),
         claude_env_vars: options.claude_env_vars.clone(),
@@ -250,7 +281,7 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
         local_launch_failure: Mutex::new(None),
     });
 
-    // 9. Register onUserMessage RPC handler
+    // Register onUserMessage RPC handler
     let queue_for_rpc = queue.clone();
     let current_mode = Arc::new(Mutex::new(initial_mode));
     let mode_for_rpc = current_mode.clone();
@@ -286,7 +317,7 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
         })
         .await;
 
-    // 10. Register set-session-config RPC handler
+    // Register set-session-config RPC handler
     let mode_for_config = current_mode.clone();
     let queue_for_config = queue.clone();
     ws_client
@@ -308,7 +339,7 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
         })
         .await;
 
-    // 11. Create LoopOptions and enter the main loop
+    // Create LoopOptions and enter the main loop
     let cs_for_local = claude_session.clone();
     let cs_for_remote = claude_session.clone();
 
@@ -328,7 +359,7 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
     })
     .await;
 
-    // 12. Handle exit
+    // Handle exit
     debug!("[runClaude] Main loop exited");
 
     // Check for local launch failure
@@ -347,8 +378,11 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
             .await;
     }
 
-    // Stop hook server
+    // Stop hook server and clean up settings file
     hook_server.stop();
+    if let Err(e) = std::fs::remove_file(&claude_session.hook_settings_path) {
+        debug!("[runClaude] Failed to remove hook settings file: {}", e);
+    }
 
     // Cleanup lifecycle
     lifecycle.cleanup().await;

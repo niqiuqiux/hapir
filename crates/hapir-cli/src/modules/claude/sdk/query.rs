@@ -116,6 +116,19 @@ pub fn query(prompt: &str, options: QueryOptions) -> anyhow::Result<Query> {
     let mut child = cmd.spawn()?;
     let stdout = child.stdout.take().expect("child stdout");
 
+    // Capture stderr for error reporting
+    if let Some(stderr) = child.stderr.take() {
+        tokio::spawn(async move {
+            let reader = BufReader::new(stderr);
+            let mut lines = reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                if !line.trim().is_empty() {
+                    tracing::warn!("[claude-sdk-stderr] {}", line);
+                }
+            }
+        });
+    }
+
     // Close stdin for --print mode
     if let Some(mut stdin) = child.stdin.take() {
         tokio::spawn(async move {

@@ -48,7 +48,7 @@ pub async fn run(working_directory: &str, runner_port: Option<u16>) -> anyhow::R
         working_directory, starting_mode
     );
 
-    // 1. Bootstrap session
+    // Bootstrap session
     let config = Configuration::create()?;
     let bootstrap = bootstrap_session(
         SessionBootstrapOptions {
@@ -89,7 +89,7 @@ pub async fn run(working_directory: &str, runner_port: Option<u16>) -> anyhow::R
         }
     }
 
-    // 2. Create RunnerLifecycle and register process handlers
+    // Create RunnerLifecycle and register process handlers
     let lifecycle = RunnerLifecycle::new(RunnerLifecycleOptions {
         ws_client: ws_client.clone(),
         log_tag: "runCodex".to_string(),
@@ -99,14 +99,14 @@ pub async fn run(working_directory: &str, runner_port: Option<u16>) -> anyhow::R
     });
     lifecycle.register_process_handlers();
 
-    // 3. Set controlledByUser on session
+    // Set controlledByUser on session
     set_controlled_by_user(&ws_client, starting_mode).await;
 
-    // 4. Create MessageQueue2<CodexMode> with mode hash
+    // Create MessageQueue2<CodexMode> with mode hash
     let initial_mode = CodexMode::default();
     let queue = Arc::new(MessageQueue2::new(compute_mode_hash));
 
-    // 5. Create AgentSessionBase
+    // Create AgentSessionBase
     let on_mode_change = create_mode_change_handler(ws_client.clone());
     let session_base = AgentSessionBase::new(AgentSessionBaseOptions {
         api: api.clone(),
@@ -127,7 +127,7 @@ pub async fn run(working_directory: &str, runner_port: Option<u16>) -> anyhow::R
         model_mode: bootstrap.session_info.model_mode,
     });
 
-    // 6. Register on-user-message RPC handler
+    // Register on-user-message RPC handler
     let queue_for_rpc = queue.clone();
     let current_mode = Arc::new(Mutex::new(initial_mode));
     let mode_for_rpc = current_mode.clone();
@@ -161,7 +161,7 @@ pub async fn run(working_directory: &str, runner_port: Option<u16>) -> anyhow::R
         })
         .await;
 
-    // 7. Register set-session-config RPC handler
+    // Register set-session-config RPC handler
     let mode_for_config = current_mode.clone();
     ws_client
         .register_rpc("set-session-config", move |params| {
@@ -181,7 +181,7 @@ pub async fn run(working_directory: &str, runner_port: Option<u16>) -> anyhow::R
         })
         .await;
 
-    // 8. Enter the main local/remote loop
+    // Enter the main local/remote loop
     let wd_local = working_directory.clone();
     let wd_remote = working_directory.clone();
     let queue_remote = queue.clone();
@@ -205,7 +205,7 @@ pub async fn run(working_directory: &str, runner_port: Option<u16>) -> anyhow::R
     })
     .await;
 
-    // 9. Cleanup
+    // Cleanup
     debug!("[runCodex] Main loop exited");
     lifecycle.cleanup().await;
 

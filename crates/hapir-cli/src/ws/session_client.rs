@@ -166,7 +166,7 @@ impl WsSessionClient {
     pub async fn send_message(&self, body: Value) {
         self.ws.emit("message", json!({
             "sid": self.session_id,
-            "body": body,
+            "message": body,
         })).await;
     }
 

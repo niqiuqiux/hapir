@@ -36,7 +36,7 @@ export function normalizeDecryptedMessage(message: DecryptedMessage): Normalized
                 originalText: message.originalText
             }
     }
-    if (record.role === 'agent') {
+    if (record.role === 'agent' || record.role === 'assistant') {
         if (isSkippableAgentContent(record.content)) {
             return null
         }

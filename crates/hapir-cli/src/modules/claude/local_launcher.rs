@@ -23,7 +23,7 @@ pub async fn claude_local_launcher(
     let working_directory = session.base.path.clone();
     debug!("[claudeLocalLauncher] Starting in {}", working_directory);
 
-    // 1. Create session scanner to watch for Claude session IDs
+    // Create session scanner to watch for Claude session IDs
     let scanner = Arc::new(Mutex::new(SessionScanner::new(
         None,
         &working_directory,
@@ -33,7 +33,7 @@ pub async fn claude_local_launcher(
         }),
     )));
 
-    // 2. Register session-found callback on the base session
+    // Register session-found callback on the base session
     let scanner_for_cb = scanner.clone();
     session
         .base
@@ -46,7 +46,7 @@ pub async fn claude_local_launcher(
         }))
         .await;
 
-    // 3. Build CLI arguments for local (interactive) mode
+    // Build CLI arguments for local (interactive) mode
     let mut args: Vec<String> = Vec::new();
 
     // Add hook settings if available
@@ -60,7 +60,7 @@ pub async fn claude_local_launcher(
         args.extend(extra_args.iter().cloned());
     }
 
-    // 4. Spawn the claude CLI process in interactive mode
+    // Spawn the claude CLI process in interactive mode
     debug!(
         "[claudeLocalLauncher] Spawning claude process with args: {:?}",
         args
@@ -103,10 +103,10 @@ pub async fn claude_local_launcher(
         }
     };
 
-    // 5. Cleanup scanner
+    // Cleanup scanner
     scanner.lock().await.cleanup().await;
 
-    // 6. Determine exit reason
+    // Determine exit reason
     let shared_started_by = match session.started_by {
         StartedBy::Runner => hapir_shared::schemas::StartedBy::Runner,
         StartedBy::Terminal => hapir_shared::schemas::StartedBy::Terminal,

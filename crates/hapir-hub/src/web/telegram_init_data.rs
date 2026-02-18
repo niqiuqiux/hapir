@@ -37,7 +37,7 @@ pub fn validate_telegram_init_data(
     bot_token: &str,
     max_age_seconds: u64,
 ) -> TelegramInitDataValidation {
-    // 1. Parse URL-encoded form parameters.
+    // Parse URL-encoded form parameters.
     let pairs: Vec<(String, String)> = form_urlencoded::parse(init_data.as_bytes())
         .map(|(k, v)| (k.into_owned(), v.into_owned()))
         .collect();
@@ -46,7 +46,7 @@ pub fn validate_telegram_init_data(
         return TelegramInitDataValidation::Err("empty init data".into());
     }
 
-    // 2. Extract the `hash` field.
+    // Extract the `hash` field.
     let hash = match pairs.iter().find(|(k, _)| k == "hash") {
         Some((_, v)) => v.clone(),
         None => return TelegramInitDataValidation::Err("missing hash field".into()),
@@ -56,7 +56,7 @@ pub fn validate_telegram_init_data(
         return TelegramInitDataValidation::Err("empty hash field".into());
     }
 
-    // 3. Extract and validate `auth_date`.
+    // Extract and validate `auth_date`.
     let auth_date_str = match pairs.iter().find(|(k, _)| k == "auth_date") {
         Some((_, v)) => v.clone(),
         None => return TelegramInitDataValidation::Err("missing auth_date field".into()),
@@ -78,8 +78,8 @@ pub fn validate_telegram_init_data(
         return TelegramInitDataValidation::Err("init data has expired".into());
     }
 
-    // 4. Build the data-check string: sort key=value pairs alphabetically by
-    //    key (excluding `hash`), join with '\n'.
+    // Build the data-check string: sort key=value pairs alphabetically by
+    // key (excluding `hash`), join with '\n'.
     let mut check_pairs: Vec<(&str, &str)> = pairs
         .iter()
         .filter(|(k, _)| k != "hash")
@@ -93,13 +93,13 @@ pub fn validate_telegram_init_data(
         .collect::<Vec<_>>()
         .join("\n");
 
-    // 5. Decode the expected hash from hex.
+    // Decode the expected hash from hex.
     let expected_hash = match hex_decode(&hash) {
         Some(h) => h,
         None => return TelegramInitDataValidation::Err("hash is not valid hex".into()),
     };
 
-    // 6. Try three secret key derivation strategies.
+    // Try three secret key derivation strategies.
     let secret_keys = derive_secret_keys(bot_token);
 
     let mut matched = false;
@@ -119,7 +119,7 @@ pub fn validate_telegram_init_data(
         return TelegramInitDataValidation::Err("hash verification failed".into());
     }
 
-    // 7. Parse the `user` JSON field.
+    // Parse the `user` JSON field.
     let user_json = match pairs.iter().find(|(k, _)| k == "user") {
         Some((_, v)) => v.clone(),
         None => return TelegramInitDataValidation::Err("missing user field".into()),

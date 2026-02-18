@@ -37,7 +37,7 @@ async fn bind_handler(
         }
     };
 
-    // 2. Validate the Telegram init data.
+    // Validate the Telegram init data.
     let validation = validate_telegram_init_data(&body.init_data, &bot_token, 300);
     let tg_user = match validation {
         TelegramInitDataValidation::Ok { user, .. } => user,
@@ -49,7 +49,7 @@ async fn bind_handler(
         }
     };
 
-    // 3. Parse the access token.
+    // Parse the access token.
     let parsed = match parse_access_token(&body.access_token) {
         Some(p) => p,
         None => {
@@ -60,7 +60,7 @@ async fn bind_handler(
         }
     };
 
-    // 4. Verify the base token matches the CLI API token.
+    // Verify the base token matches the CLI API token.
     if !constant_time_eq(&parsed.base_token, &state.cli_api_token) {
         return (
             StatusCode::UNAUTHORIZED,
@@ -71,12 +71,12 @@ async fn bind_handler(
     let namespace = parsed.namespace;
     let platform_user_id = tg_user.id.to_string();
 
-    // 5. Get or create user in the store.
+    // Get or create user in the store.
     let conn = state.store.conn();
     let existing_user = users::get_user(&conn, "telegram", &platform_user_id);
 
     if let Some(ref existing) = existing_user {
-        // 6. Check if user is already bound to a different namespace.
+        // Check if user is already bound to a different namespace.
         if existing.namespace != namespace {
             return (
                 StatusCode::CONFLICT,
@@ -98,7 +98,7 @@ async fn bind_handler(
     // Drop the connection guard before potentially blocking calls.
     drop(conn);
 
-    // 7. Get or create the owner ID.
+    // Get or create the owner ID.
     let owner_id = match get_or_create_owner_id(&state.data_dir) {
         Ok(id) => id,
         Err(e) => {
@@ -109,7 +109,7 @@ async fn bind_handler(
         }
     };
 
-    // 8. Issue JWT (HS256, 15 minute expiry).
+    // Issue JWT (HS256, 15 minute expiry).
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()

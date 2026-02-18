@@ -41,7 +41,7 @@ pub struct Configuration {
 
 impl Configuration {
     pub async fn create() -> Result<Self> {
-        // Resolve data directory: HAPIR_HOME env or ~/.hapi
+        // Resolve data directory: HAPIR_HOME env or ~/.hapir
         let data_dir = if let Ok(home) = std::env::var("HAPIR_HOME") {
             PathBuf::from(home)
         } else {

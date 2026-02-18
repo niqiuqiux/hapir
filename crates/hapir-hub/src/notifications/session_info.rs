@@ -9,28 +9,28 @@ use hapir_shared::schemas::Session;
 /// 4. First 8 characters of session ID
 pub fn get_session_name(session: &Session) -> String {
     if let Some(ref metadata) = session.metadata {
-        // 1. Explicit name
+        // Explicit name
         if let Some(ref name) = metadata.name {
             if !name.is_empty() {
                 return name.clone();
             }
         }
 
-        // 2. Summary text
+        // Summary text
         if let Some(ref summary) = metadata.summary {
             if !summary.text.is_empty() {
                 return summary.text.clone();
             }
         }
 
-        // 3. Last path component
+        // Last path component
         let parts: Vec<&str> = metadata.path.split('/').filter(|s| !s.is_empty()).collect();
         if let Some(last) = parts.last() {
             return (*last).to_string();
         }
     }
 
-    // 4. Fallback: first 8 chars of session ID
+    // Fallback: first 8 chars of session ID
     session.id.chars().take(8).collect()
 }
 

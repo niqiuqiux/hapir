@@ -88,6 +88,7 @@ impl MessageService {
         store: &Store,
         publisher: &EventPublisher,
         session_id: &str,
+        namespace: &str,
         text: &str,
         local_id: Option<&str>,
         attachments: Option<&[AttachmentMetadata]>,
@@ -121,7 +122,7 @@ impl MessageService {
 
         publisher.emit(SyncEvent::MessageReceived {
             session_id: session_id.to_string(),
-            namespace: None,
+            namespace: Some(namespace.to_string()),
             message: decrypted,
         });
 

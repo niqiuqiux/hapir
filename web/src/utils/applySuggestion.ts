@@ -44,8 +44,8 @@ export function applySuggestion(
     let suggestionToInsert = suggestion
     if (addSpace) {
         // Add space if:
-        // 1. There's no text after (end of string)
-        // 2. There's text after but no space
+        // There's no text after (end of string)
+        // There's text after but no space
         if (afterWord.length === 0 || afterWord[0] !== ' ') {
             suggestionToInsert += ' '
         }

@@ -126,6 +126,7 @@ async fn create_message(
 
     match state.sync_engine.send_message(
         &session_id,
+        &auth.namespace,
         &body.text,
         body.local_id.as_deref(),
         attachments_slice,

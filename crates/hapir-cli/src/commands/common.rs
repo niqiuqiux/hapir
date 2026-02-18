@@ -29,7 +29,7 @@ pub fn initialize_token(config: &mut Configuration) -> Result<()> {
 
     eprintln!("No API token found. Please enter your CLI_API_TOKEN.");
     eprintln!(
-        "(You can find it in the hub server startup logs or ~/.hapi/settings.json on the server)"
+        "(You can find it in the hub server startup logs or ~/.hapir/settings.json on the server)"
     );
     eprint!("CLI_API_TOKEN: ");
     io::stderr().flush()?;

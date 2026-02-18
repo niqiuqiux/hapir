@@ -172,7 +172,7 @@ async fn handle_message(
             if sessions::set_session_todos(&store.conn(), sid, Some(&todos_val), msg.created_at, namespace) {
                 sync_engine.handle_realtime_event(hapir_shared::schemas::SyncEvent::SessionUpdated {
                     session_id: sid.to_string(),
-                    namespace: None,
+                    namespace: Some(namespace.to_string()),
                     data: Some(serde_json::json!({"sid": sid})),
                 }).await;
             }
@@ -205,7 +205,7 @@ async fn handle_message(
     // Emit to sync engine
     sync_engine.handle_realtime_event(hapir_shared::schemas::SyncEvent::MessageReceived {
         session_id: sid.to_string(),
-        namespace: None,
+        namespace: Some(namespace.to_string()),
         message: hapir_shared::schemas::DecryptedMessage {
             id: msg.id,
             seq: Some(msg.seq as f64),
@@ -265,7 +265,7 @@ async fn handle_update_metadata(
             sync_engine.handle_realtime_event(
                 hapir_shared::schemas::SyncEvent::SessionUpdated {
                     session_id: sid.to_string(),
-                    namespace: None,
+                    namespace: Some(namespace.to_string()),
                     data: Some(serde_json::json!({"sid": sid})),
                 },
             ).await;
@@ -327,7 +327,7 @@ async fn handle_update_state(
             sync_engine.handle_realtime_event(
                 hapir_shared::schemas::SyncEvent::SessionUpdated {
                     session_id: sid.to_string(),
-                    namespace: None,
+                    namespace: Some(namespace.to_string()),
                     data: Some(serde_json::json!({"sid": sid})),
                 },
             ).await;
@@ -469,7 +469,7 @@ async fn handle_machine_update_metadata(
             sync_engine.handle_realtime_event(
                 hapir_shared::schemas::SyncEvent::MachineUpdated {
                     machine_id: mid.to_string(),
-                    namespace: None,
+                    namespace: Some(namespace.to_string()),
                     data: Some(serde_json::json!({"id": mid})),
                 },
             ).await;
@@ -529,7 +529,7 @@ async fn handle_machine_update_state(
             sync_engine.handle_realtime_event(
                 hapir_shared::schemas::SyncEvent::MachineUpdated {
                     machine_id: mid.to_string(),
-                    namespace: None,
+                    namespace: Some(namespace.to_string()),
                     data: Some(serde_json::json!({"id": mid})),
                 },
             ).await;
