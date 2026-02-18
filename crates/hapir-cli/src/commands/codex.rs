@@ -16,6 +16,10 @@ pub struct CodexArgs {
     #[arg(long)]
     pub started_by: Option<String>,
 
+    /// Starting mode for the session
+    #[arg(long)]
+    pub hapir_starting_mode: Option<String>,
+
     /// Bypass permission prompts
     #[arg(long)]
     pub yolo: bool,

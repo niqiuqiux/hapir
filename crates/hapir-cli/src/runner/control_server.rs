@@ -338,7 +338,7 @@ pub async fn do_spawn_session(state: &RunnerState, req: SpawnSessionRequest) -> 
             args.push(resume_id.clone());
         }
     }
-    args.extend(["--hapi-starting-mode".to_string(), "remote".to_string(), "--started-by".to_string(), "runner".to_string()]);
+    args.extend(["--hapir-starting-mode".to_string(), "remote".to_string(), "--started-by".to_string(), "runner".to_string()]);
     if let Some(ref model) = req.model
         && agent_cmd != "opencode"
     {

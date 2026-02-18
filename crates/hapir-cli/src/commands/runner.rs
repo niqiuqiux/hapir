@@ -348,13 +348,13 @@ async fn connect_to_hub(
                 });
             // Match TS: validate directory is present
             if req.directory.is_empty() {
-                return json!({ "type": "error", "errorMessage": "Directory is required" });
+                return json!({ "type": "error", "error": "Directory is required" });
             }
             let resp = control_server::do_spawn_session(&rs, req).await;
             match resp.r#type.as_str() {
                 "success" => json!({ "type": "success", "sessionId": resp.session_id }),
                 "requestToApproveDirectoryCreation" => json!({ "type": "requestToApproveDirectoryCreation", "directory": resp.directory }),
-                _ => json!({ "type": "error", "errorMessage": resp.error }),
+                _ => json!({ "type": "error", "error": resp.error }),
             }
         })
     }).await;
