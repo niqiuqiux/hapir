@@ -253,6 +253,19 @@ async fn start_sync(config: &Configuration) -> anyhow::Result<()> {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
 
+    // Kill all tracked session child processes and notify hub
+    let ended_ids = control_server::stop_all_sessions(&state).await;
+    if !ended_ids.is_empty() {
+        info!(count = ended_ids.len(), "killed tracked session processes");
+        if let Some(ref ws) = ws_machine {
+            for sid in &ended_ids {
+                ws.send_session_end(sid).await;
+            }
+            // Give time for session-end events to send
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    }
+
     if let Some(handle) = heartbeat_handle {
         handle.abort();
     }

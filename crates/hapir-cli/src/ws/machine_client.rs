@@ -187,6 +187,18 @@ impl WsMachineClient {
         })).await;
     }
 
+    /// Notify the hub that a session has ended (fire-and-forget).
+    pub async fn send_session_end(&self, session_id: &str) {
+        let time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+        self.ws.emit("session-end", json!({
+            "sid": session_id,
+            "time": time,
+        })).await;
+    }
+
     pub async fn shutdown(&self) {
         if let Some(handle) = self.keep_alive_handle.lock().await.take() {
             handle.abort();

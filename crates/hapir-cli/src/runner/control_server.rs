@@ -604,6 +604,31 @@ async fn spawn_session(
     }
 }
 
+/// Kill all tracked session processes and return the session IDs that had received webhooks
+/// (i.e. are known to the hub). Used during runner graceful shutdown.
+pub async fn stop_all_sessions(state: &RunnerState) -> Vec<String> {
+    let mut sessions = state.sessions.lock().await;
+    let mut ended_session_ids = Vec::new();
+
+    for (_, session) in sessions.drain() {
+        if let Some(pid) = session.pid {
+            #[cfg(unix)]
+            {
+                let pgid_result = unsafe { libc::kill(-(pid as i32), libc::SIGTERM) };
+                if pgid_result != 0 {
+                    unsafe { libc::kill(pid as i32, libc::SIGTERM); }
+                }
+            }
+            let _ = pid;
+        }
+        if session.webhook_received {
+            ended_session_ids.push(session.session_id);
+        }
+    }
+
+    ended_session_ids
+}
+
 /// Request runner shutdown. Shared logic used by both HTTP handler and RPC.
 pub async fn do_stop_runner(state: &RunnerState, source: ShutdownSource) -> Value {
     info!("runner stop requested (source: {:?})", source);
