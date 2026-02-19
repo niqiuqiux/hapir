@@ -240,7 +240,7 @@ impl SessionCache {
             None => return,
         };
 
-        if self.sessions.get(sid).is_none() {
+        if !self.sessions.contains_key(sid) {
             self.refresh_session(sid, store, publisher);
         }
         let session = match self.sessions.get_mut(sid) {
@@ -297,7 +297,7 @@ impl SessionCache {
     ) {
         let t = clamp_alive_time(time).unwrap_or_else(now_millis);
 
-        if self.sessions.get(sid).is_none() {
+        if !self.sessions.contains_key(sid) {
             self.refresh_session(sid, store, publisher);
         }
         let session = match self.sessions.get_mut(sid) {
@@ -354,7 +354,7 @@ impl SessionCache {
         store: &Store,
         publisher: &EventPublisher,
     ) {
-        if self.sessions.get(session_id).is_none() {
+        if !self.sessions.contains_key(session_id) {
             self.refresh_session(session_id, store, publisher);
         }
         let session = match self.sessions.get_mut(session_id) {

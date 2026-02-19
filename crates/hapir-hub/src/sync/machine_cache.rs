@@ -210,7 +210,7 @@ impl MachineCache {
             None => return,
         };
 
-        if self.machines.get(machine_id).is_none() {
+        if !self.machines.contains_key(machine_id) {
             self.refresh_machine(machine_id, store, publisher);
         }
         let machine = match self.machines.get_mut(machine_id) {
