@@ -10,7 +10,7 @@ use hapir_shared::schemas::StartedBy as SharedStartedBy;
 use crate::agent::local_launch_policy::{
     get_local_launch_exit_reason, LocalLaunchContext, LocalLaunchExitReason,
 };
-use crate::agent::loop_base::{LoopOptions, LoopResult, run_local_remote_session};
+use crate::agent::loop_base::{run_local_remote_session, LoopOptions, LoopResult};
 use crate::agent::runner_lifecycle::{
     create_mode_change_handler, set_controlled_by_user, RunnerLifecycle, RunnerLifecycleOptions,
 };
@@ -196,6 +196,19 @@ pub async fn run(working_directory: &str, runner_port: Option<u16>) -> anyhow::R
         })
         .await;
 
+    // Register killSession RPC handler
+    let queue_for_kill = queue.clone();
+    ws_client
+        .register_rpc("killSession", move |_params| {
+            let q = queue_for_kill.clone();
+            Box::pin(async move {
+                debug!("[runGemini] killSession RPC received, closing queue");
+                q.close().await;
+                serde_json::json!({"ok": true})
+            })
+        })
+        .await;
+
     // All RPC handlers registered — now connect the WebSocket.
     ws_client.connect().await;
 
@@ -235,9 +248,7 @@ pub async fn run(working_directory: &str, runner_port: Option<u16>) -> anyhow::R
 ///
 /// Spawns the `gemini` CLI process in interactive mode, waits for it
 /// to exit, then determines whether to switch to remote or exit.
-async fn gemini_local_launcher(
-    session: &Arc<AgentSessionBase<GeminiMode>>,
-) -> LoopResult {
+async fn gemini_local_launcher(session: &Arc<AgentSessionBase<GeminiMode>>) -> LoopResult {
     let working_directory = session.path.clone();
     debug!("[geminiLocalLauncher] Starting in {}", working_directory);
 
@@ -277,9 +288,7 @@ async fn gemini_local_launcher(
 ///
 /// Waits for messages from the queue, spawns `gemini --print` for each
 /// message, reads stdout line-by-line and forwards output to the session.
-async fn gemini_remote_launcher(
-    session: &Arc<AgentSessionBase<GeminiMode>>,
-) -> LoopResult {
+async fn gemini_remote_launcher(session: &Arc<AgentSessionBase<GeminiMode>>) -> LoopResult {
     let working_directory = session.path.clone();
     debug!("[geminiRemoteLauncher] Starting in {}", working_directory);
 
@@ -367,10 +376,7 @@ async fn gemini_remote_launcher(
         // Wait for the process to finish
         match child.wait().await {
             Ok(status) => {
-                debug!(
-                    "[geminiRemoteLauncher] Gemini process exited: {:?}",
-                    status
-                );
+                debug!("[geminiRemoteLauncher] Gemini process exited: {:?}", status);
             }
             Err(e) => {
                 warn!("[geminiRemoteLauncher] Error waiting for gemini: {}", e);

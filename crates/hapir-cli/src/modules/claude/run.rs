@@ -393,7 +393,10 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
                 debug!("[runClaude] permission RPC received: {:?}", params);
 
                 let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                let approved = params.get("approved").and_then(|v| v.as_bool()).unwrap_or(false);
+                let approved = params
+                    .get("approved")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
                 let updated_input = params.get("updatedInput").cloned();
 
                 // Find and respond to pending permission
@@ -408,30 +411,58 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
                         .unwrap()
                         .as_millis() as f64;
 
-                    let _ = cs.base.ws_client.update_agent_state(move |mut state| {
-                        // Remove from requests
-                        if let Some(requests) = state.get_mut("requests").and_then(|v| v.as_object_mut()) {
-                            if let Some(request) = requests.remove(&id_clone) {
-                                // Add to completedRequests
-                                let completed_requests = state
-                                    .get_mut("completedRequests")
-                                    .and_then(|v| v.as_object_mut())
-                                    .map(|obj| obj.clone())
-                                    .unwrap_or_default();
+                    let _ = cs
+                        .base
+                        .ws_client
+                        .update_agent_state(move |mut state| {
+                            // Remove from requests
+                            if let Some(requests) =
+                                state.get_mut("requests").and_then(|v| v.as_object_mut())
+                            {
+                                if let Some(request) = requests.remove(&id_clone) {
+                                    // Add to completedRequests
+                                    let completed_requests = state
+                                        .get_mut("completedRequests")
+                                        .and_then(|v| v.as_object_mut())
+                                        .map(|obj| obj.clone())
+                                        .unwrap_or_default();
 
-                                let mut updated_completed = completed_requests.clone();
-                                let mut completed_request = request.as_object().cloned().unwrap_or_default();
-                                completed_request.insert("status".to_string(), serde_json::json!(status));
-                                completed_request.insert("completedAt".to_string(), serde_json::json!(completed_at));
+                                    let mut updated_completed = completed_requests.clone();
+                                    let mut completed_request =
+                                        request.as_object().cloned().unwrap_or_default();
+                                    completed_request
+                                        .insert("status".to_string(), serde_json::json!(status));
+                                    completed_request.insert(
+                                        "completedAt".to_string(),
+                                        serde_json::json!(completed_at),
+                                    );
 
-                                updated_completed.insert(id_clone.clone(), serde_json::json!(completed_request));
-                                state["completedRequests"] = serde_json::json!(updated_completed);
+                                    updated_completed.insert(
+                                        id_clone.clone(),
+                                        serde_json::json!(completed_request),
+                                    );
+                                    state["completedRequests"] =
+                                        serde_json::json!(updated_completed);
+                                }
                             }
-                        }
-                        state
-                    }).await;
+                            state
+                        })
+                        .await;
                 }
 
+                serde_json::json!({"ok": true})
+            })
+        })
+        .await;
+
+    // Register killSession RPC handler (hub calls this to terminate the session)
+    let queue_for_kill = queue.clone();
+    ws_client
+        .register_rpc("killSession", move |_params| {
+            let q = queue_for_kill.clone();
+            Box::pin(async move {
+                debug!("[runClaude] killSession RPC received, closing queue");
+                q.close().await;
                 serde_json::json!({"ok": true})
             })
         })

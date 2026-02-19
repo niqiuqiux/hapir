@@ -10,7 +10,7 @@ use hapir_shared::schemas::StartedBy as SharedStartedBy;
 use crate::agent::local_launch_policy::{
     get_local_launch_exit_reason, LocalLaunchContext, LocalLaunchExitReason,
 };
-use crate::agent::loop_base::{LoopOptions, LoopResult, run_local_remote_session};
+use crate::agent::loop_base::{run_local_remote_session, LoopOptions, LoopResult};
 use crate::agent::runner_lifecycle::{
     create_mode_change_handler, set_controlled_by_user, RunnerLifecycle, RunnerLifecycleOptions,
 };
@@ -176,6 +176,19 @@ pub async fn run(working_directory: &str, runner_port: Option<u16>) -> anyhow::R
                     debug!("[runCodex] Collaboration mode changed to: {}", cm);
                     m.collaboration_mode = Some(cm.to_string());
                 }
+                serde_json::json!({"ok": true})
+            })
+        })
+        .await;
+
+    // Register killSession RPC handler
+    let queue_for_kill = queue.clone();
+    ws_client
+        .register_rpc("killSession", move |_params| {
+            let q = queue_for_kill.clone();
+            Box::pin(async move {
+                debug!("[runCodex] killSession RPC received, closing queue");
+                q.close().await;
                 serde_json::json!({"ok": true})
             })
         })

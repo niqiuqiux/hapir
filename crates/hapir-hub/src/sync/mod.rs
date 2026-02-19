@@ -308,9 +308,13 @@ impl SyncEngine {
         self.rpc_gateway.abort_session(session_id).await
     }
 
-    /// Archive: RPC kill (no lock) → then update cache
+    /// Archive: best-effort RPC kill → then update cache.
+    /// The kill RPC is fire-and-forget: the session is archived regardless of
+    /// whether the CLI is still connected or has a handler registered.
     pub async fn archive_session(&self, session_id: &str) -> anyhow::Result<()> {
-        self.rpc_gateway.kill_session(session_id).await?;
+        if let Err(e) = self.rpc_gateway.kill_session(session_id).await {
+            tracing::debug!(session_id, error = %e, "killSession RPC failed (proceeding with archive)");
+        }
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
