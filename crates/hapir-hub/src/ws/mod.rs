@@ -5,6 +5,7 @@ pub mod terminal_registry;
 
 use std::sync::Arc;
 
+use axum::http::StatusCode;
 use axum::{
     extract::{
         ws::{Message, WebSocket}, Query, State,
@@ -16,9 +17,10 @@ use axum::{
 use futures::{SinkExt, StreamExt};
 use serde::Deserialize;
 use serde_json::Value;
+use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
-
+use uuid::Uuid;
 use crate::config::cli_api_token;
 use crate::store::Store;
 use crate::sync::SyncEngine;
@@ -80,7 +82,7 @@ async fn ws_cli_upgrade(
                 session_id = ?query.session_id,
                 "CLI WebSocket 认证失败 (token 无效)"
             );
-            return axum::http::StatusCode::UNAUTHORIZED.into_response();
+            return StatusCode::UNAUTHORIZED.into_response();
         }
     };
 
@@ -95,10 +97,8 @@ async fn ws_cli_upgrade(
         },
     };
 
-    ws.on_upgrade(move |socket| {
-        handle_cli_ws(socket, state, namespace, session_id, machine_id)
-    })
-    .into_response()
+    ws.on_upgrade(move |socket| handle_cli_ws(socket, state, namespace, session_id, machine_id))
+        .into_response()
 }
 
 #[derive(Deserialize)]
@@ -116,7 +116,7 @@ async fn ws_terminal_upgrade(
     // Verify JWT
     let claims = match verify_jwt(&token, &state.jwt_secret) {
         Some(c) => c,
-        None => return axum::http::StatusCode::UNAUTHORIZED.into_response(),
+        None => return StatusCode::UNAUTHORIZED.into_response(),
     };
 
     ws.on_upgrade(move |socket| handle_terminal_ws(socket, state, claims.namespace))
@@ -152,9 +152,9 @@ async fn handle_cli_ws(
     session_id: Option<String>,
     machine_id: Option<String>,
 ) {
-    let conn_id = uuid::Uuid::new_v4().to_string();
+    let conn_id = Uuid::new_v4().to_string();
     let (mut ws_tx, mut ws_rx) = socket.split();
-    let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel::<WsOutMessage>();
+    let (out_tx, mut out_rx) = unbounded_channel::<WsOutMessage>();
 
     // Register connection
     let conn = WsConnection {
@@ -244,7 +244,10 @@ async fn handle_cli_ws(
         if event.ends_with(":ack") || event == "rpc-response" {
             if let Some(id) = parsed.get("id").and_then(|v| v.as_str()) {
                 let result_val = parsed.get("data").cloned().unwrap_or(Value::Null);
-                let error = result_val.get("error").and_then(|v| v.as_str()).map(String::from);
+                let error = result_val
+                    .get("error")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
                 if let Some(err) = error {
                     state.conn_mgr.handle_rpc_response(id, Err(err)).await;
                 } else {
@@ -305,9 +308,9 @@ async fn handle_cli_ws(
 }
 
 async fn handle_terminal_ws(socket: WebSocket, state: WsState, namespace: String) {
-    let conn_id = uuid::Uuid::new_v4().to_string();
+    let conn_id = Uuid::new_v4().to_string();
     let (mut ws_tx, mut ws_rx) = socket.split();
-    let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel::<WsOutMessage>();
+    let (out_tx, mut out_rx) = unbounded_channel::<WsOutMessage>();
 
     let conn = WsConnection {
         id: conn_id.clone(),
