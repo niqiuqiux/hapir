@@ -8,7 +8,7 @@ use hapir_cli::commands::gemini::GeminiArgs;
 use hapir_cli::commands::opencode::OpencodeArgs;
 
 #[derive(Parser)]
-#[command(name = "hapi", about = "Local-first AI agent remote control")]
+#[command(name = "hapir", about = "Local-first AI agent remote control")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -168,7 +168,7 @@ async fn main() {
         // No subcommand: default to claude with any trailing args
         None => {
             let claude_args = ClaudeArgs::try_parse_from(
-                std::iter::once("hapi".to_string()).chain(cli.args),
+                std::iter::once("hapir".to_string()).chain(cli.args),
             )
             .unwrap_or_else(|e| e.exit());
             hapir_cli::run_cli(claude_args).await

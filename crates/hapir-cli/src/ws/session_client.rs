@@ -200,7 +200,7 @@ impl WsSessionClient {
     pub async fn register_rpc(
         &self,
         method: &str,
-        handler: impl Fn(Value) -> std::pin::Pin<Box<dyn std::future::Future<Output = Value> + Send>> + Send + Sync + 'static,
+        handler: impl Fn(Value) -> std::pin::Pin<Box<dyn Future<Output = Value> + Send>> + Send + Sync + 'static,
     ) {
         let scoped_method = format!("{}:{}", self.session_id, method);
         info!(method = %scoped_method, "registering session-scoped RPC handler");

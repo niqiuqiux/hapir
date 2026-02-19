@@ -1,3 +1,4 @@
+use std::env::consts::OS;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -53,7 +54,7 @@ pub fn build_machine_metadata(config: &Configuration) -> MachineMetadata {
 
     MachineMetadata {
         host: hostname,
-        platform: std::env::consts::OS.to_string(),
+        platform: OS.to_string(),
         happy_cli_version: env!("CARGO_PKG_VERSION").to_string(),
         home_dir,
         happy_home_dir: config.home_dir.to_string_lossy().to_string(),
@@ -90,7 +91,7 @@ pub fn build_session_metadata(
         host: hostname,
         version: Some(env!("CARGO_PKG_VERSION").to_string()),
         name: None,
-        os: Some(std::env::consts::OS.to_string()),
+        os: Some(OS.to_string()),
         summary: None,
         machine_id: Some(machine_id.to_string()),
         claude_session_id: None,

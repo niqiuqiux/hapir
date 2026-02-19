@@ -2,6 +2,7 @@ use std::io::{self, BufRead, Write};
 use std::process::Stdio;
 
 use anyhow::{bail, Context, Result};
+use atty::Stream;
 use tracing::{debug, info, warn};
 
 use crate::agent::session_factory::build_machine_metadata;
@@ -20,7 +21,7 @@ pub fn initialize_token(config: &mut Configuration) -> Result<()> {
         return Ok(());
     }
 
-    if !atty::is(atty::Stream::Stdin) {
+    if !atty::is(Stream::Stdin) {
         bail!(
             "CLI_API_TOKEN is not set and stdin is not a TTY.\n\
              Run 'hapir auth login' or set the CLI_API_TOKEN environment variable."
@@ -98,7 +99,7 @@ pub async fn auth_and_setup_machine_with_state(
 }
 
 /// Ensure the runner process is alive, auto-starting it if needed.
-pub async fn ensure_runner(config: &Configuration) -> Result<Option<u16>> {
+pub async fn ensure_runner(config: &Configuration, machine_id: String) -> Result<Option<u16>> {
     if let Some(port) =
         control_client::check_runner_alive(&config.runner_state_file, &config.runner_lock_file)
             .await
@@ -140,8 +141,8 @@ pub async fn ensure_runner(config: &Configuration) -> Result<Option<u16>> {
 /// token -> machine registration -> runner check.
 pub async fn full_init(config: &mut Configuration) -> Result<Option<u16>> {
     initialize_token(config)?;
-    let _machine_id = auth_and_setup_machine(config).await?;
-    ensure_runner(config).await
+    let machine_id = auth_and_setup_machine(config).await?;
+    ensure_runner(config, machine_id).await
 }
 
 /// Spawn the runner as a fully detached background process.

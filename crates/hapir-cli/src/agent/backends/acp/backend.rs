@@ -336,7 +336,7 @@ impl AgentBackend for AcpSdkBackend {
                                 "terminal": false
                             },
                             "clientInfo": {
-                                "name": "hapi",
+                                "name": "hapir",
                                 "version": env!("CARGO_PKG_VERSION")
                             }
                         }),

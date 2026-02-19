@@ -18,8 +18,9 @@ use crate::config::Configuration;
 use crate::handlers::uploads;
 use crate::modules::claude::hook_server::start_hook_server;
 use crate::modules::claude::session::{ClaudeSession, StartedBy};
+use crate::rpc::RpcHandlerManager;
 use crate::utils::message_queue::MessageQueue2;
-
+use crate::ws::session_client::WsSessionClient;
 use super::local_launcher::claude_local_launcher;
 use super::remote_launcher::claude_remote_launcher;
 
@@ -188,44 +189,7 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
     let hook_token = hook_server.token.clone();
     debug!("[runClaude] Hook server started on port {}", hook_port);
 
-    // Write hook settings file so `claude --settings <path>` can find it.
-    // The SessionStart hook calls back to our hook server with the session ID.
-    let hook_settings_path = format!(
-        "{}/.hapir/hook-settings/{}.json",
-        dirs_next::home_dir()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_default(),
-        session_id
-    );
-    {
-        let exe_path = std::env::current_exe()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|_| "hapir".to_string());
-        let settings_json = serde_json::json!({
-            "hooks": {
-                "SessionStart": [
-                    {
-                        "hooks": [
-                            {
-                                "type": "command",
-                                "command": format!(
-                                    "{} hook-forwarder --port {} --token {}",
-                                    exe_path, hook_port, hook_token
-                                )
-                            }
-                        ]
-                    }
-                ]
-            }
-        });
-        if let Some(parent) = Path::new(&hook_settings_path).parent() {
-            std::fs::create_dir_all(parent).ok();
-        }
-        match std::fs::write(&hook_settings_path, settings_json.to_string()) {
-            Ok(_) => debug!("[runClaude] Wrote hook settings to {}", hook_settings_path),
-            Err(e) => warn!("[runClaude] Failed to write hook settings: {}", e),
-        }
-    }
+    let hook_settings_path = write_hook_settings(&session_id, hook_port, &hook_token);
 
     // Create RunnerLifecycle and register process handlers
     let ws_for_lifecycle = ws_client.clone();
@@ -285,16 +249,7 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
         pending_permissions: Arc::new(Mutex::new(HashMap::new())),
     });
 
-    // Register common RPC handlers (bash, files, directories, git, ripgrep)
-    {
-        let rpc_mgr = crate::rpc::RpcHandlerManager::new("_tmp_");
-        crate::handlers::register_all_handlers(&rpc_mgr, &working_directory).await;
-        for (method, handler) in rpc_mgr.drain_handlers().await {
-            ws_client
-                .register_rpc(&method, move |params| handler(params))
-                .await;
-        }
-    }
+    register_common_rpc_handlers(&ws_client, &working_directory).await;
 
     // Register onUserMessage RPC handler
     let queue_for_rpc = queue.clone();
@@ -530,4 +485,58 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Write the hook settings JSON file that `claude --settings <path>` reads.
+/// Returns the path to the written file.
+fn write_hook_settings(session_id: &str, hook_port: u16, hook_token: &str) -> String {
+    let hook_settings_path = format!(
+        "{}/.hapir/hook-settings/{}.json",
+        dirs_next::home_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default(),
+        session_id
+    );
+    let exe_path = std::env::current_exe()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| "hapir".to_string());
+    let settings_json = serde_json::json!({
+        "hooks": {
+            "SessionStart": [
+                {
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": format!(
+                                "{} hook-forwarder --port {} --token {}",
+                                exe_path, hook_port, hook_token
+                            )
+                        }
+                    ]
+                }
+            ]
+        }
+    });
+    if let Some(parent) = Path::new(&hook_settings_path).parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+    match std::fs::write(&hook_settings_path, settings_json.to_string()) {
+        Ok(_) => debug!("[runClaude] Wrote hook settings to {}", hook_settings_path),
+        Err(e) => warn!("[runClaude] Failed to write hook settings: {}", e),
+    }
+    hook_settings_path
+}
+
+/// Register common RPC handlers (bash, files, directories, git, ripgrep) on the WebSocket client.
+async fn register_common_rpc_handlers(
+    ws_client: &Arc<WsSessionClient>,
+    working_directory: &str,
+) {
+    let rpc_mgr = RpcHandlerManager::new("_tmp_");
+    crate::handlers::register_all_handlers(&rpc_mgr, working_directory).await;
+    for (method, handler) in rpc_mgr.drain_handlers().await {
+        ws_client
+            .register_rpc(&method, move |params| handler(params))
+            .await;
+    }
 }
