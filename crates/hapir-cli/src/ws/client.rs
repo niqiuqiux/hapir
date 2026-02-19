@@ -251,18 +251,18 @@ impl WsClient {
                 let ws_stream = match connect_result {
                     Ok(Ok((stream, _))) => stream,
                     Ok(Err(e)) => {
-                        warn!(error = %e, "WebSocket connection failed");
+                        warn!(attempt = attempts, error = %e, "WebSocket connection failed, will retry");
                         Self::wait_backoff(&shutdown_flag, &shutdown, &mut backoff, max_backoff).await;
                         continue;
                     }
                     Err(_) => {
-                        warn!("WebSocket connect timed out ({}s)", CONNECT_TIMEOUT.as_secs());
+                        warn!(attempt = attempts, "WebSocket connect timed out ({}s), will retry", CONNECT_TIMEOUT.as_secs());
                         Self::wait_backoff(&shutdown_flag, &shutdown, &mut backoff, max_backoff).await;
                         continue;
                     }
                 };
 
-                info!("WebSocket connected");
+                info!(scope_id = %config.scope_id, "WebSocket connected");
                 *state.write().await = ConnectionState::Connected;
                 has_connected_once.store(true, Ordering::Relaxed);
                 backoff = Duration::from_secs(1);
@@ -471,6 +471,8 @@ impl WsClient {
                 *tx_holder.lock().await = None;
                 pending_acks.lock().await.clear();
 
+                info!(scope_id = %config.scope_id, "WebSocket disconnected, scheduling reconnect");
+
                 if let Some(ref cb) = *on_disconnect.lock().await {
                     cb();
                 }
@@ -490,7 +492,7 @@ impl WsClient {
         if shutdown_flag.load(Ordering::Relaxed) {
             return;
         }
-        debug!(backoff_ms = backoff.as_millis(), "reconnecting after delay");
+        debug!(backoff_ms = backoff.as_millis() as u64, "waiting before reconnect");
         tokio::select! {
             _ = time::sleep(*backoff) => {},
             _ = shutdown.notified() => {},

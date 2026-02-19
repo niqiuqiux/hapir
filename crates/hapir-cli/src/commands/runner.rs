@@ -1,7 +1,7 @@
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use serde_json::json;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::agent::session_factory::build_machine_metadata;
 use crate::commands::common;
@@ -135,11 +135,38 @@ async fn start_sync(config: &Configuration) -> anyhow::Result<()> {
     eprintln!("Runner started on port {port} (pid {})", std::process::id());
 
     // --- Hub WebSocket connectivity (best-effort) ---
-    let ws_machine: Option<Arc<WsMachineClient>> = match connect_to_hub(config, port, start_time_ms, &state).await {
-        Ok(ws) => Some(ws),
+    let ws_holder: Arc<OnceLock<Arc<WsMachineClient>>> = Arc::new(OnceLock::new());
+
+    match connect_to_hub(config, port, start_time_ms, &state).await {
+        Ok(ws) => {
+            let _ = ws_holder.set(ws);
+        }
         Err(e) => {
             warn!("hub connection failed, running in local-only mode: {e}");
-            None
+            // Spawn background task to keep retrying hub connection
+            let holder = ws_holder.clone();
+            let cfg = config.clone();
+            let rs = state.clone();
+            tokio::spawn(async move {
+                let retry_interval = std::time::Duration::from_secs(30);
+                loop {
+                    tokio::time::sleep(retry_interval).await;
+                    if holder.get().is_some() {
+                        break;
+                    }
+                    debug!("retrying hub connection...");
+                    match connect_to_hub(&cfg, port, start_time_ms, &rs).await {
+                        Ok(ws) => {
+                            info!("hub connection established (deferred)");
+                            let _ = holder.set(ws);
+                            break;
+                        }
+                        Err(e) => {
+                            debug!("hub reconnection attempt failed: {e}");
+                        }
+                    }
+                }
+            });
         }
     };
 
@@ -238,7 +265,7 @@ async fn start_sync(config: &Configuration) -> anyhow::Result<()> {
     info!(source = ?shutdown_source, "runner shutting down");
 
     // Graceful shutdown: update hub state
-    if let Some(ref ws) = ws_machine {
+    if let Some(ws) = ws_holder.get() {
         let shutdown_at = epoch_ms();
         let source_str = shutdown_source.as_str();
         if let Err(e) = ws.update_runner_state(|mut s| {
@@ -257,7 +284,7 @@ async fn start_sync(config: &Configuration) -> anyhow::Result<()> {
     let ended_ids = control_server::stop_all_sessions(&state).await;
     if !ended_ids.is_empty() {
         info!(count = ended_ids.len(), "killed tracked session processes");
-        if let Some(ref ws) = ws_machine {
+        if let Some(ws) = ws_holder.get() {
             for sid in &ended_ids {
                 ws.send_session_end(sid).await;
             }
@@ -270,7 +297,7 @@ async fn start_sync(config: &Configuration) -> anyhow::Result<()> {
         handle.abort();
     }
 
-    if let Some(ws) = ws_machine {
+    if let Some(ws) = ws_holder.get() {
         ws.shutdown().await;
     }
 
