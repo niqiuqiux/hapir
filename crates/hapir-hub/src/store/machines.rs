@@ -65,7 +65,7 @@ pub fn get_or_create_machine(
     let now = now_millis();
     let metadata_json = serde_json::to_string(metadata)?;
     let runner_state_json = runner_state
-        .map(|v| serde_json::to_string(v))
+        .map(serde_json::to_string)
         .transpose()?;
 
     conn.execute(
