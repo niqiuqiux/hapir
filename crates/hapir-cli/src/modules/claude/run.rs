@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 
 use sha2::{Digest, Sha256};
@@ -190,7 +191,7 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
     // Write hook settings file so `claude --settings <path>` can find it.
     // The SessionStart hook calls back to our hook server with the session ID.
     let hook_settings_path = format!(
-        "{}/.hapir/claude-hook-settings-{}.json",
+        "{}/.hapir/hook-settings/{}.json",
         dirs_next::home_dir()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default(),
@@ -199,7 +200,7 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
     {
         let exe_path = std::env::current_exe()
             .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|_| "hapi".to_string());
+            .unwrap_or_else(|_| "hapir".to_string());
         let settings_json = serde_json::json!({
             "hooks": {
                 "SessionStart": [
@@ -217,7 +218,7 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
                 ]
             }
         });
-        if let Some(parent) = std::path::Path::new(&hook_settings_path).parent() {
+        if let Some(parent) = Path::new(&hook_settings_path).parent() {
             std::fs::create_dir_all(parent).ok();
         }
         match std::fs::write(&hook_settings_path, settings_json.to_string()) {
