@@ -56,7 +56,7 @@ pub fn get_or_create_session(
     }
 
     let now = now_millis();
-    let id = uuid::Uuid::new_v4().to_string();
+    let id = format!("sess_{}", uuid::Uuid::new_v4());
     let metadata_json = serde_json::to_string(metadata)?;
     let agent_state_json = agent_state.map(|v| serde_json::to_string(v)).transpose()?;
 

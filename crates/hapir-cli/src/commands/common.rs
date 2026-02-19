@@ -73,7 +73,7 @@ pub async fn auth_and_setup_machine_with_state(
     let machine_id = if let Some(ref id) = settings.machine_id {
         id.clone()
     } else {
-        let id = uuid::Uuid::new_v4().to_string();
+        let id = format!("mach_{}", uuid::Uuid::new_v4());
         persistence::update_settings(&config.settings_file, |s| {
             s.machine_id = Some(id.clone());
         })?;
