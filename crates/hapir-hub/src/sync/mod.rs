@@ -477,15 +477,7 @@ impl SyncEngine {
             _ => metadata.claude_session_id.as_deref(),
         };
 
-        let resume_token = match resume_token {
-            Some(t) => t.to_string(),
-            None => {
-                return ResumeSessionResult::Error {
-                    message: "Resume session ID unavailable".into(),
-                    code: ResumeSessionErrorCode::ResumeUnavailable,
-                }
-            }
-        };
+        let resume_token = resume_token.map(|t| t.to_string());
 
         // Phase 2: find target machine (read lock, then release)
         let target = {
@@ -519,6 +511,7 @@ impl SyncEngine {
         };
 
         // Phase 3: RPC spawn (no lock held)
+        // If no resume token (session created but agent never started), spawn fresh.
         let spawn_result = self.rpc_gateway.spawn_session(
             &target.id,
             &metadata.path,
@@ -527,7 +520,7 @@ impl SyncEngine {
             None,
             None,
             None,
-            Some(&resume_token),
+            resume_token.as_deref(),
         ).await;
 
         let spawn_session_id = match spawn_result {
