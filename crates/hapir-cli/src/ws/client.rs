@@ -55,6 +55,8 @@ type RpcHandler = Arc<
         + Sync,
 >;
 
+type ConnectionCallback = Box<dyn Fn() + Send + Sync>;
+
 pub struct WsClient {
     config: WsClientConfig,
     state: Arc<RwLock<ConnectionState>>,
@@ -92,8 +94,8 @@ pub struct WsClient {
     connect_messages: Arc<Mutex<Vec<String>>>,
 
     /// Connection callbacks
-    on_connect: Arc<Mutex<Option<Box<dyn Fn() + Send + Sync>>>>,
-    on_disconnect: Arc<Mutex<Option<Box<dyn Fn() + Send + Sync>>>>,
+    on_connect: Arc<Mutex<Option<ConnectionCallback>>>,
+    on_disconnect: Arc<Mutex<Option<ConnectionCallback>>>,
 }
 
 impl WsClient {

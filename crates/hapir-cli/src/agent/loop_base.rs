@@ -21,6 +21,8 @@ pub type LoopLauncher<Mode> = Box<
         + Sync,
 >;
 
+type SessionReadyCallback<Mode> = Box<dyn FnOnce(&AgentSessionBase<Mode>) + Send>;
+
 /// Options for the local/remote loop.
 pub struct LoopOptions<Mode: Clone + Send + 'static> {
     pub session: std::sync::Arc<AgentSessionBase<Mode>>,
@@ -28,7 +30,7 @@ pub struct LoopOptions<Mode: Clone + Send + 'static> {
     pub log_tag: String,
     pub run_local: LoopLauncher<Mode>,
     pub run_remote: LoopLauncher<Mode>,
-    pub on_session_ready: Option<Box<dyn FnOnce(&AgentSessionBase<Mode>) + Send>>,
+    pub on_session_ready: Option<SessionReadyCallback<Mode>>,
 }
 
 /// Run the session with an optional on_session_ready callback, then enter the loop.

@@ -6,13 +6,15 @@ use tracing::debug;
 
 use crate::ws::session_client::WsSessionClient;
 
+type AsyncClosureFn = dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync;
+
 /// Options for creating a RunnerLifecycle.
 pub struct RunnerLifecycleOptions {
     pub ws_client: Arc<WsSessionClient>,
     pub log_tag: String,
     pub stop_keep_alive: Option<Box<dyn Fn() + Send + Sync>>,
-    pub on_before_close: Option<Box<dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync>>,
-    pub on_after_close: Option<Box<dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync>>,
+    pub on_before_close: Option<Box<AsyncClosureFn>>,
+    pub on_after_close: Option<Box<AsyncClosureFn>>,
 }
 
 /// Manages the lifecycle of a runner process: exit codes, archiving, cleanup, signal handling.
@@ -23,8 +25,8 @@ pub struct RunnerLifecycle {
     ws_client: Arc<WsSessionClient>,
     log_tag: String,
     stop_keep_alive: Option<Arc<dyn Fn() + Send + Sync>>,
-    on_before_close: Option<Arc<dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync>>,
-    on_after_close: Option<Arc<dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync>>,
+    on_before_close: Option<Arc<AsyncClosureFn>>,
+    on_after_close: Option<Arc<AsyncClosureFn>>,
 }
 
 impl RunnerLifecycle {

@@ -13,7 +13,7 @@ use crate::agent::types::{
 };
 
 use super::message_handler::AcpMessageHandler;
-use super::transport::{AcpStderrError, AcpStdioTransport};
+use super::transport::{AcpStdioTransport, StderrErrorHandler};
 
 // ---------------------------------------------------------------------------
 // Retry helper
@@ -66,7 +66,7 @@ pub struct AcpSdkBackend {
     transport: Mutex<Option<Arc<AcpStdioTransport>>>,
     permission_handler: Mutex<Option<OnPermissionRequestFn>>,
     #[allow(dead_code)]
-    stderr_error_handler: Mutex<Option<Box<dyn Fn(AcpStderrError) + Send + Sync>>>,
+    stderr_error_handler: Mutex<Option<StderrErrorHandler>>,
     pending_permissions: Arc<Mutex<HashMap<String, PendingPermission>>>,
     active_session_id: Mutex<Option<String>>,
     message_handler: Arc<Mutex<Option<AcpMessageHandler>>>,

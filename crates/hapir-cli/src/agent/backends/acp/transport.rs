@@ -32,6 +32,12 @@ pub struct AcpStderrError {
     pub raw: String,
 }
 
+/// Handler for notification messages from the child process.
+pub type NotificationHandler = Box<dyn Fn(String, Value) + Send + Sync>;
+
+/// Handler for stderr error messages from the child process.
+pub type StderrErrorHandler = Box<dyn Fn(AcpStderrError) + Send + Sync>;
+
 /// Handler for incoming JSON-RPC requests from the child process.
 /// Receives `(params, request_id)` and returns the result value.
 pub type RequestHandler = Arc<
@@ -69,8 +75,8 @@ pub struct AcpStdioTransport {
     next_id: AtomicU64,
     pending: Arc<Mutex<HashMap<u64, PendingRequest>>>,
     request_handlers: Arc<Mutex<HashMap<String, RequestHandler>>>,
-    notification_handler: Arc<Mutex<Option<Box<dyn Fn(String, Value) + Send + Sync>>>>,
-    stderr_error_handler: Arc<Mutex<Option<Box<dyn Fn(AcpStderrError) + Send + Sync>>>>,
+    notification_handler: Arc<Mutex<Option<NotificationHandler>>>,
+    stderr_error_handler: Arc<Mutex<Option<StderrErrorHandler>>>,
     write_tx: Mutex<Option<mpsc::UnboundedSender<WriteCmd>>>,
     child: Mutex<Option<Child>>,
     protocol_error: Arc<Mutex<Option<String>>>,

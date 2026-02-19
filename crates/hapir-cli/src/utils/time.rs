@@ -29,6 +29,8 @@ pub fn exponential_backoff_delay(
     Duration::from_millis(ms.round() as u64)
 }
 
+type RetryCallback = Box<dyn Fn(&anyhow::Error, u32, Duration) + Send + Sync>;
+
 /// Options for `with_retry`.
 pub struct RetryOptions<S>
 where
@@ -43,7 +45,7 @@ where
     /// Predicate to decide if an error is retryable.
     pub should_retry: S,
     /// Optional callback before each retry.
-    pub on_retry: Option<Box<dyn Fn(&anyhow::Error, u32, Duration) + Send + Sync>>,
+    pub on_retry: Option<RetryCallback>,
 }
 
 impl Default for RetryOptions<fn(&anyhow::Error) -> bool> {
