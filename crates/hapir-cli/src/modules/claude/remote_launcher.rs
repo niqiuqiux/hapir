@@ -119,8 +119,8 @@ pub async fn claude_remote_launcher(
                 permission_mode: mode.permission_mode.clone(),
                 allowed_tools: mode.allowed_tools.clone(),
                 disallowed_tools: mode.disallowed_tools.clone(),
+                continue_conversation: session_id.is_some(),
                 resume: session_id,
-                continue_conversation: true,
                 mcp_servers: if session.mcp_servers.is_empty() {
                     None
                 } else {
