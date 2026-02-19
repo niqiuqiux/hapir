@@ -229,7 +229,7 @@ async fn list_files(
     };
 
     let search_query = query.query.as_deref().map(|q| q.trim()).unwrap_or("");
-    let limit = query.limit.unwrap_or(200).min(500).max(1);
+    let limit = query.limit.unwrap_or(200).clamp(1, 500);
 
     let mut args: Vec<String> = vec!["--files".to_string()];
     if !search_query.is_empty() {

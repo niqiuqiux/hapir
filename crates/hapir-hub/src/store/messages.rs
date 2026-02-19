@@ -69,7 +69,7 @@ pub fn get_messages(
     limit: i64,
     before_seq: Option<i64>,
 ) -> Vec<StoredMessage> {
-    let safe_limit = limit.max(1).min(200);
+    let safe_limit = limit.clamp(1, 200);
 
     let mut msgs = if let Some(seq) = before_seq {
         let mut stmt = match conn.prepare(
@@ -103,7 +103,7 @@ pub fn get_messages_after(
     after_seq: i64,
     limit: i64,
 ) -> Vec<StoredMessage> {
-    let safe_limit = limit.max(1).min(200);
+    let safe_limit = limit.clamp(1, 200);
     let safe_after = if after_seq < 0 { 0 } else { after_seq };
 
     let mut stmt = match conn.prepare(
