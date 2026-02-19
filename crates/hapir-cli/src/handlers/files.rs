@@ -121,10 +121,10 @@ pub async fn register_file_handlers(rpc: &(impl RpcRegistry + Sync), working_dir
                 }
 
                 // Write the file
-                if let Some(parent) = resolved.parent() {
-                    if let Err(e) = tokio::fs::create_dir_all(parent).await {
-                        return json!({"success": false, "error": format!("Failed to create directories: {e}")});
-                    }
+                if let Some(parent) = resolved.parent()
+                    && let Err(e) = tokio::fs::create_dir_all(parent).await
+                {
+                    return json!({"success": false, "error": format!("Failed to create directories: {e}")});
                 }
 
                 match tokio::fs::write(&resolved, &bytes).await {

@@ -191,15 +191,15 @@ impl SseManager {
         }
 
         // Check session/machine match
-        if let Some(sid) = event_session_id(event) {
-            if sub.session_id.as_deref() == Some(sid) {
-                return true;
-            }
+        if let Some(sid) = event_session_id(event)
+            && sub.session_id.as_deref() == Some(sid)
+        {
+            return true;
         }
-        if let Some(mid) = event_machine_id(event) {
-            if sub.machine_id.as_deref() == Some(mid) {
-                return true;
-            }
+        if let Some(mid) = event_machine_id(event)
+            && sub.machine_id.as_deref() == Some(mid)
+        {
+            return true;
         }
 
         false

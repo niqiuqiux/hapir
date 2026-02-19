@@ -256,15 +256,15 @@ impl MachineCache {
 
     /// Mark a specific machine as offline (e.g. when its WebSocket disconnects).
     pub fn mark_machine_offline(&mut self, machine_id: &str, publisher: &EventPublisher) {
-        if let Some(machine) = self.machines.get_mut(machine_id) {
-            if machine.active {
-                machine.active = false;
-                publisher.emit(SyncEvent::MachineUpdated {
-                    machine_id: machine_id.to_string(),
-                    namespace: Some(machine.namespace.clone()),
-                    data: Some(serde_json::json!({"active": false})),
-                });
-            }
+        if let Some(machine) = self.machines.get_mut(machine_id)
+            && machine.active
+        {
+            machine.active = false;
+            publisher.emit(SyncEvent::MachineUpdated {
+                machine_id: machine_id.to_string(),
+                namespace: Some(machine.namespace.clone()),
+                data: Some(serde_json::json!({"active": false})),
+            });
         }
     }
 }

@@ -50,10 +50,10 @@ fn is_retryable_connection_error_inner(
         }
     }
 
-    if let Some(status) = http_status {
-        if status >= 500 {
-            return true;
-        }
+    if let Some(status) = http_status
+        && status >= 500
+    {
+        return true;
     }
 
     false
@@ -62,10 +62,10 @@ fn is_retryable_connection_error_inner(
 fn extract_http_status(err: &anyhow::Error) -> Option<u16> {
     // Walk the error chain looking for reqwest status errors.
     for cause in err.chain() {
-        if let Some(reqwest_err) = cause.downcast_ref::<reqwest::Error>() {
-            if let Some(status) = reqwest_err.status() {
-                return Some(status.as_u16());
-            }
+        if let Some(reqwest_err) = cause.downcast_ref::<reqwest::Error>()
+            && let Some(status) = reqwest_err.status()
+        {
+            return Some(status.as_u16());
         }
     }
     None

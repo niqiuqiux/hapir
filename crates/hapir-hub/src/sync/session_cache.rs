@@ -131,25 +131,25 @@ impl SessionCache {
             self.todo_backfill_attempted.insert(session_id.to_string());
             let msgs = messages::get_messages(&store.conn(), session_id, 200, None);
             for msg in msgs.iter().rev() {
-                if let Some(content) = &msg.content {
-                    if let Some(todos) = extract_todos_from_message_content(content) {
-                        let todos_value = serde_json::to_value(&todos).ok();
-                        if let Some(tv) = &todos_value {
-                            if sessions::set_session_todos(
-                                &store.conn(),
-                                session_id,
-                                Some(tv),
-                                msg.created_at,
-                                &stored.namespace,
-                            ) {
-                                // Re-read stored session
-                                if let Some(refreshed) = sessions::get_session(&store.conn(), session_id) {
-                                    stored = refreshed;
-                                }
-                            }
+                if let Some(content) = &msg.content
+                    && let Some(todos) = extract_todos_from_message_content(content)
+                {
+                    let todos_value = serde_json::to_value(&todos).ok();
+                    if let Some(tv) = &todos_value
+                        && sessions::set_session_todos(
+                            &store.conn(),
+                            session_id,
+                            Some(tv),
+                            msg.created_at,
+                            &stored.namespace,
+                        )
+                    {
+                        // Re-read stored session
+                        if let Some(refreshed) = sessions::get_session(&store.conn(), session_id) {
+                            stored = refreshed;
                         }
-                        break;
                     }
+                    break;
                 }
             }
         }
@@ -513,41 +513,41 @@ impl SessionCache {
         messages::merge_session_messages(&store.conn(), old_session_id, new_session_id)?;
 
         // Merge metadata
-        if let (Some(old_meta), Some(new_meta)) = (&old_stored.metadata, &new_stored.metadata) {
-            if let Some(merged) = merge_metadata(old_meta, new_meta) {
-                // Try up to 2 times for optimistic concurrency
-                for _ in 0..2 {
-                    if let Some(latest) = sessions::get_session_by_namespace(&store.conn(), new_session_id, namespace) {
-                        let result = sessions::update_session_metadata(
-                            &store.conn(),
-                            new_session_id,
-                            &merged,
-                            latest.metadata_version,
-                            namespace,
-                            false,
-                        );
-                        use crate::store::types::VersionedUpdateResult;
-                        match result {
-                            VersionedUpdateResult::Success { .. } => break,
-                            VersionedUpdateResult::Error => break,
-                            _ => continue,
-                        }
+        if let (Some(old_meta), Some(new_meta)) = (&old_stored.metadata, &new_stored.metadata)
+            && let Some(merged) = merge_metadata(old_meta, new_meta)
+        {
+            // Try up to 2 times for optimistic concurrency
+            for _ in 0..2 {
+                if let Some(latest) = sessions::get_session_by_namespace(&store.conn(), new_session_id, namespace) {
+                    let result = sessions::update_session_metadata(
+                        &store.conn(),
+                        new_session_id,
+                        &merged,
+                        latest.metadata_version,
+                        namespace,
+                        false,
+                    );
+                    use crate::store::types::VersionedUpdateResult;
+                    match result {
+                        VersionedUpdateResult::Success { .. } => break,
+                        VersionedUpdateResult::Error => break,
+                        _ => continue,
                     }
                 }
             }
         }
 
         // Merge todos
-        if old_stored.todos.is_some() {
-            if let Some(ts) = old_stored.todos_updated_at {
-                sessions::set_session_todos(
-                    &store.conn(),
-                    new_session_id,
-                    old_stored.todos.as_ref(),
-                    ts,
-                    namespace,
-                );
-            }
+        if old_stored.todos.is_some()
+            && let Some(ts) = old_stored.todos_updated_at
+        {
+            sessions::set_session_todos(
+                &store.conn(),
+                new_session_id,
+                old_stored.todos.as_ref(),
+                ts,
+                namespace,
+            );
         }
 
         // Delete old session
@@ -593,13 +593,12 @@ fn merge_metadata(old: &Value, new: &Value) -> Option<Value> {
         .get("summary")
         .and_then(|s| s.get("updatedAt"))
         .and_then(|v| v.as_f64());
-    if let Some(old_t) = old_updated {
-        if new_updated.is_none() || old_t > new_updated.unwrap_or(0.0) {
-            if let Some(summary) = old_obj.get("summary") {
-                merged.insert("summary".into(), summary.clone());
-                changed = true;
-            }
-        }
+    if let Some(old_t) = old_updated
+        && (new_updated.is_none() || old_t > new_updated.unwrap_or(0.0))
+        && let Some(summary) = old_obj.get("summary")
+    {
+        merged.insert("summary".into(), summary.clone());
+        changed = true;
     }
 
     // Preserve worktree

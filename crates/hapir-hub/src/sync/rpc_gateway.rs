@@ -254,14 +254,14 @@ impl RpcGateway {
             Ok(val) => {
                 if let Some(obj) = val.as_object() {
                     let t = obj.get("type").and_then(|v| v.as_str()).unwrap_or("error");
-                    if t == "success" {
-                        if let Some(sid) = obj.get("sessionId").and_then(|v| v.as_str()) {
-                            return Ok(SpawnSessionResult {
-                                result_type: "success".into(),
-                                session_id: Some(sid.to_string()),
-                                message: None,
-                            });
-                        }
+                    if t == "success"
+                        && let Some(sid) = obj.get("sessionId").and_then(|v| v.as_str())
+                    {
+                        return Ok(SpawnSessionResult {
+                            result_type: "success".into(),
+                            session_id: Some(sid.to_string()),
+                            message: None,
+                        });
                     }
                     let msg = obj.get("error").and_then(|v| v.as_str())
                         .unwrap_or("Unexpected spawn result");

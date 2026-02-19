@@ -62,10 +62,10 @@ impl PermissionHandler {
 
     /// Check if a tool call was rejected.
     pub fn is_aborted(&self, tool_call_id: &str) -> bool {
-        if let Some(resp) = self.responses.get(tool_call_id) {
-            if !resp.approved {
-                return true;
-            }
+        if let Some(resp) = self.responses.get(tool_call_id)
+            && !resp.approved
+        {
+            return true;
         }
         // Always abort exit_plan_mode
         self.tool_calls

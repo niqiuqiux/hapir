@@ -47,32 +47,28 @@ pub fn unwrap_role_wrapped_record_envelope(value: &Value) -> Option<RoleWrappedR
     let obj = value.as_object().unwrap();
 
     // .message
-    if let Some(msg) = obj.get("message") {
-        if let Some(r) = extract_role_wrapped(msg) {
-            return Some(r);
-        }
+    if let Some(msg) = obj.get("message")
+        && let Some(r) = extract_role_wrapped(msg)
+    {
+        return Some(r);
     }
 
     // .data.message
-    if let Some(data) = obj.get("data") {
-        if let Some(data_obj) = data.as_object() {
-            if let Some(msg) = data_obj.get("message") {
-                if let Some(r) = extract_role_wrapped(msg) {
-                    return Some(r);
-                }
-            }
-        }
+    if let Some(data) = obj.get("data")
+        && let Some(data_obj) = data.as_object()
+        && let Some(msg) = data_obj.get("message")
+        && let Some(r) = extract_role_wrapped(msg)
+    {
+        return Some(r);
     }
 
     // .payload.message
-    if let Some(payload) = obj.get("payload") {
-        if let Some(payload_obj) = payload.as_object() {
-            if let Some(msg) = payload_obj.get("message") {
-                if let Some(r) = extract_role_wrapped(msg) {
-                    return Some(r);
-                }
-            }
-        }
+    if let Some(payload) = obj.get("payload")
+        && let Some(payload_obj) = payload.as_object()
+        && let Some(msg) = payload_obj.get("message")
+        && let Some(r) = extract_role_wrapped(msg)
+    {
+        return Some(r);
     }
 
     None

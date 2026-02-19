@@ -64,10 +64,10 @@ fn resolve_env_number(name: &str, fallback: u64) -> u64 {
 }
 
 fn resolve_shell() -> String {
-    if let Ok(shell) = std::env::var("SHELL") {
-        if !shell.is_empty() {
-            return shell;
-        }
+    if let Ok(shell) = std::env::var("SHELL")
+        && !shell.is_empty()
+    {
+        return shell;
     }
     "/bin/bash".to_string()
 }
@@ -402,10 +402,10 @@ impl TerminalManager {
                             signal: None,
                         }));
                         // Cleanup
-                        if let Some(mut rt) = terms.remove(&terminal_id) {
-                            if let Some(c) = rt.idle_cancel.take() {
-                                let _ = c.send(());
-                            }
+                        if let Some(mut rt) = terms.remove(&terminal_id)
+                            && let Some(c) = rt.idle_cancel.take()
+                        {
+                            let _ = c.send(());
                         }
                         break;
                     }

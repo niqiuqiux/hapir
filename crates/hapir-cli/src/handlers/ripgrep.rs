@@ -23,10 +23,10 @@ pub async fn register_ripgrep_handlers(rpc: &(impl RpcRegistry + Sync), working_
 
             let cwd_override = params.get("cwd").and_then(|v| v.as_str()).map(String::from);
 
-            if let Some(ref cwd) = cwd_override {
-                if let Err(e) = validate_path(cwd, &wd) {
-                    return json!({"success": false, "error": e});
-                }
+            if let Some(ref cwd) = cwd_override
+                && let Err(e) = validate_path(cwd, &wd)
+            {
+                return json!({"success": false, "error": e});
             }
 
             let cwd = cwd_override.unwrap_or_else(|| wd.to_string());

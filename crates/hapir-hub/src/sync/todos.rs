@@ -55,10 +55,10 @@ fn extract_from_claude_output(content: &Value, content_type: &str) -> Option<Vec
             continue;
         }
         // PLACEHOLDER_TODOS_CONTINUE
-        if let Some(todos) = input.get("todos") {
-            if let Ok(items) = serde_json::from_value::<Vec<TodoItem>>(todos.clone()) {
-                return Some(items);
-            }
+        if let Some(todos) = input.get("todos")
+            && let Ok(items) = serde_json::from_value::<Vec<TodoItem>>(todos.clone())
+        {
+            return Some(items);
         }
     }
 

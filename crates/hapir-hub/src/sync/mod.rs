@@ -558,15 +558,15 @@ impl SyncEngine {
         }
 
         // Phase 5: merge sessions (write lock)
-        if spawn_session_id != original_id {
-            if let Err(e) = self.session_cache.write().await.merge_sessions(
+        if spawn_session_id != original_id
+            && let Err(e) = self.session_cache.write().await.merge_sessions(
                 &original_id, &spawn_session_id, namespace, &self.store, &self.publisher,
-            ) {
-                return ResumeSessionResult::Error {
-                    message: e.to_string(),
-                    code: ResumeSessionErrorCode::ResumeFailed,
-                };
-            }
+            )
+        {
+            return ResumeSessionResult::Error {
+                message: e.to_string(),
+                code: ResumeSessionErrorCode::ResumeFailed,
+            };
         }
 
         ResumeSessionResult::Success { session_id: spawn_session_id }
@@ -579,10 +579,10 @@ impl SyncEngine {
         let timeout = std::time::Duration::from_millis(timeout_ms);
 
         loop {
-            if let Some(session) = self.get_session(session_id).await {
-                if session.active {
-                    return true;
-                }
+            if let Some(session) = self.get_session(session_id).await
+                && session.active
+            {
+                return true;
             }
             if start.elapsed() >= timeout {
                 return false;

@@ -182,10 +182,10 @@ impl ConnectionManager {
         let members = rooms.get(session_id)?;
         let conns = self.connections.read().await;
         for member_id in members {
-            if let Some(conn) = conns.get(member_id) {
-                if conn.conn_type == WsConnType::Cli && conn.namespace == namespace {
-                    return Some(member_id.clone());
-                }
+            if let Some(conn) = conns.get(member_id)
+                && conn.conn_type == WsConnType::Cli && conn.namespace == namespace
+            {
+                return Some(member_id.clone());
             }
         }
         None

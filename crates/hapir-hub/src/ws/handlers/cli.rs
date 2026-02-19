@@ -170,16 +170,16 @@ async fn handle_message(
 
     // Extract todos
     let todos = extract_todos_from_message_content(&content);
-    if let Some(ref todos) = todos {
-        if let Ok(todos_val) = serde_json::to_value(todos) {
-            use crate::store::sessions;
-            if sessions::set_session_todos(&store.conn(), sid, Some(&todos_val), msg.created_at, namespace) {
-                sync_engine.handle_realtime_event(hapir_shared::schemas::SyncEvent::SessionUpdated {
-                    session_id: sid.to_string(),
-                    namespace: Some(namespace.to_string()),
-                    data: Some(serde_json::json!({"sid": sid})),
-                }).await;
-            }
+    if let Some(ref todos) = todos
+        && let Ok(todos_val) = serde_json::to_value(todos)
+    {
+        use crate::store::sessions;
+        if sessions::set_session_todos(&store.conn(), sid, Some(&todos_val), msg.created_at, namespace) {
+            sync_engine.handle_realtime_event(hapir_shared::schemas::SyncEvent::SessionUpdated {
+                session_id: sid.to_string(),
+                namespace: Some(namespace.to_string()),
+                data: Some(serde_json::json!({"sid": sid})),
+            }).await;
         }
     }
 

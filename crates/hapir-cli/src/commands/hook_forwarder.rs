@@ -88,11 +88,11 @@ fn parse_args(args: &[String]) -> Result<(u16, String)> {
     // Fall back to positional: first number = port, next string = token
     if port.is_none() || token.is_none() {
         for val in &positional {
-            if port.is_none() {
-                if let Ok(p) = val.parse::<u16>() {
-                    port = Some(p);
-                    continue;
-                }
+            if port.is_none()
+                && let Ok(p) = val.parse::<u16>()
+            {
+                port = Some(p);
+                continue;
             }
             if token.is_none() {
                 token = Some(val.clone());

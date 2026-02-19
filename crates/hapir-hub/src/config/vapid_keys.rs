@@ -6,12 +6,11 @@ use std::path::Path;
 
 pub fn get_or_create_vapid_keys(data_dir: &Path) -> Result<VapidKeys> {
     let settings_path = settings_file_path(data_dir);
-    if let Ok(Some(ref settings)) = read_settings(&settings_path) {
-        if let Some(ref keys) = settings.vapid_keys {
-            if !keys.public_key.is_empty() && !keys.private_key.is_empty() {
-                return Ok(keys.clone());
-            }
-        }
+    if let Ok(Some(ref settings)) = read_settings(&settings_path)
+        && let Some(ref keys) = settings.vapid_keys
+        && !keys.public_key.is_empty() && !keys.private_key.is_empty()
+    {
+        return Ok(keys.clone());
     }
 
     // Generate new VAPID keys (P-256 ECDSA)

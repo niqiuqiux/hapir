@@ -126,10 +126,10 @@ impl AcpSdkBackend {
 
         let session_id = obj.get("sessionId").and_then(|v| v.as_str());
         let active = self.active_session_id.lock().await;
-        if let (Some(active_id), Some(sid)) = (active.as_deref(), session_id) {
-            if sid != active_id {
-                return;
-            }
+        if let (Some(active_id), Some(sid)) = (active.as_deref(), session_id)
+            && sid != active_id
+        {
+            return;
         }
         drop(active);
 
@@ -273,10 +273,10 @@ impl AgentBackend for AcpSdkBackend {
                             None => return,
                         };
                         // We can't await in a sync closure, so use try_lock
-                        if let Ok(mut handler) = msg_for_notif.try_lock() {
-                            if let Some(h) = handler.as_mut() {
-                                h.handle_update(&update);
-                            }
+                        if let Ok(mut handler) = msg_for_notif.try_lock()
+                            && let Some(h) = handler.as_mut()
+                        {
+                            h.handle_update(&update);
                         }
                     }
                 })

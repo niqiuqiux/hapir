@@ -16,15 +16,14 @@ pub fn format_session_notification(session: &Session) -> String {
         format!("Session: {name}"),
     ];
 
-    if let Some(ref state) = session.agent_state {
-        if let Some(ref requests) = state.requests {
-            if let Some((_, req)) = requests.iter().next() {
-                lines.push(format!("Tool: {}", req.tool));
-                let args = format_tool_arguments_detailed(&req.tool, &req.arguments);
-                if !args.is_empty() {
-                    lines.push(args);
-                }
-            }
+    if let Some(ref state) = session.agent_state
+        && let Some(ref requests) = state.requests
+        && let Some((_, req)) = requests.iter().next()
+    {
+        lines.push(format!("Tool: {}", req.tool));
+        let args = format_tool_arguments_detailed(&req.tool, &req.arguments);
+        if !args.is_empty() {
+            lines.push(args);
         }
     }
 

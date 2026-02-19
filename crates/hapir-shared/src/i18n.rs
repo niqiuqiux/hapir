@@ -6,10 +6,10 @@ use sys_locale::get_locale;
 /// to `sys-locale` crate detection.
 pub fn is_zh() -> bool {
     for key in &["LC_ALL", "LANG"] {
-        if let Ok(val) = std::env::var(key) {
-            if !val.is_empty() {
-                return val.to_lowercase().starts_with("zh");
-            }
+        if let Ok(val) = std::env::var(key)
+            && !val.is_empty()
+        {
+            return val.to_lowercase().starts_with("zh");
         }
     }
     get_locale()

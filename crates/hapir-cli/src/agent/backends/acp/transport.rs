@@ -331,13 +331,14 @@ impl AcpStdioTransport {
         }
 
         // Incoming request (has method + id)
+        if parsed.get("method").is_some()
+            && let Some(id) = parsed.get("id")
+            && !id.is_null()
+        {
+            self.handle_incoming_request(&parsed).await;
+            return;
+        }
         if parsed.get("method").is_some() {
-            if let Some(id) = parsed.get("id") {
-                if !id.is_null() {
-                    self.handle_incoming_request(&parsed).await;
-                    return;
-                }
-            }
             // Notification (method but no id)
             let method = parsed["method"].as_str().unwrap_or("").to_string();
             let params = parsed.get("params").cloned().unwrap_or(Value::Null);

@@ -374,32 +374,31 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
                             // Remove from requests
                             if let Some(requests) =
                                 state.get_mut("requests").and_then(|v| v.as_object_mut())
+                                && let Some(request) = requests.remove(&id_clone)
                             {
-                                if let Some(request) = requests.remove(&id_clone) {
-                                    // Add to completedRequests
-                                    let completed_requests = state
-                                        .get_mut("completedRequests")
-                                        .and_then(|v| v.as_object_mut())
-                                        .map(|obj| obj.clone())
-                                        .unwrap_or_default();
+                                // Add to completedRequests
+                                let completed_requests = state
+                                    .get_mut("completedRequests")
+                                    .and_then(|v| v.as_object_mut())
+                                    .map(|obj| obj.clone())
+                                    .unwrap_or_default();
 
-                                    let mut updated_completed = completed_requests.clone();
-                                    let mut completed_request =
-                                        request.as_object().cloned().unwrap_or_default();
-                                    completed_request
-                                        .insert("status".to_string(), serde_json::json!(status));
-                                    completed_request.insert(
-                                        "completedAt".to_string(),
-                                        serde_json::json!(completed_at),
-                                    );
+                                let mut updated_completed = completed_requests.clone();
+                                let mut completed_request =
+                                    request.as_object().cloned().unwrap_or_default();
+                                completed_request
+                                    .insert("status".to_string(), serde_json::json!(status));
+                                completed_request.insert(
+                                    "completedAt".to_string(),
+                                    serde_json::json!(completed_at),
+                                );
 
-                                    updated_completed.insert(
-                                        id_clone.clone(),
-                                        serde_json::json!(completed_request),
-                                    );
-                                    state["completedRequests"] =
-                                        serde_json::json!(updated_completed);
-                                }
+                                updated_completed.insert(
+                                    id_clone.clone(),
+                                    serde_json::json!(completed_request),
+                                );
+                                state["completedRequests"] =
+                                    serde_json::json!(updated_completed);
                             }
                             state
                         })

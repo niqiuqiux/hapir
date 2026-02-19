@@ -224,11 +224,11 @@ impl WsClient {
                 }
 
                 // Check reconnect limit
-                if let Some(max) = config.max_reconnect_attempts {
-                    if attempts >= max {
-                        warn!(attempts, "max reconnection attempts reached, giving up");
-                        break;
-                    }
+                if let Some(max) = config.max_reconnect_attempts
+                    && attempts >= max
+                {
+                    warn!(attempts, "max reconnection attempts reached, giving up");
+                    break;
                 }
                 attempts += 1;
 
@@ -391,48 +391,47 @@ impl WsClient {
                                 let text_str: &str = &text;
                                 if let Ok(ws_msg) = serde_json::from_str::<WsMessage>(text_str) {
                                     // Ack response
-                                    if let Some(ref id) = ws_msg.id {
-                                        if ws_msg.event.ends_with(":ack") {
-                                            if let Some(sender) = read_pending.lock().await.remove(id) {
-                                                let _ = sender.send(ws_msg.data);
-                                                continue;
-                                            }
-                                        }
+                                    if let Some(ref id) = ws_msg.id
+                                        && ws_msg.event.ends_with(":ack")
+                                        && let Some(sender) = read_pending.lock().await.remove(id)
+                                    {
+                                        let _ = sender.send(ws_msg.data);
+                                        continue;
                                     }
 
                                     // RPC request
-                                    if ws_msg.event == "rpc-request" {
-                                        if let Some(ref id) = ws_msg.id {
-                                            let method = ws_msg.data.get("method")
-                                                .and_then(|v| v.as_str())
-                                                .unwrap_or("");
-                                            let params_raw = ws_msg.data.get("params")
-                                                .cloned()
-                                                .unwrap_or(Value::Null);
-                                            // Hub sends params as a JSON-encoded string; parse it back
-                                            let params = match params_raw {
-                                                Value::String(ref s) => serde_json::from_str(s).unwrap_or(params_raw),
-                                                other => other,
-                                            };
+                                    if ws_msg.event == "rpc-request"
+                                        && let Some(ref id) = ws_msg.id
+                                    {
+                                        let method = ws_msg.data.get("method")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("");
+                                        let params_raw = ws_msg.data.get("params")
+                                            .cloned()
+                                            .unwrap_or(Value::Null);
+                                        // Hub sends params as a JSON-encoded string; parse it back
+                                        let params = match params_raw {
+                                            Value::String(ref s) => serde_json::from_str(s).unwrap_or(params_raw),
+                                            other => other,
+                                        };
 
-                                            if let Some(handler) = read_rpcs.read().await.get(method).cloned() {
-                                                debug!(method, "RPC request received, dispatching to handler");
-                                                let id = id.clone();
-                                                let tx = read_tx.clone();
-                                                tokio::spawn(async move {
-                                                    let result = handler(params).await;
-                                                    let ack = WsRequest {
-                                                        id: Some(id),
-                                                        event: "rpc-request:ack".into(),
-                                                        data: result,
-                                                    };
-                                                    if let Ok(json) = serde_json::to_string(&ack) {
-                                                        let _ = tx.send(Message::Text(json.into()));
-                                                    }
-                                                });
-                                            }
-                                            continue;
+                                        if let Some(handler) = read_rpcs.read().await.get(method).cloned() {
+                                            debug!(method, "RPC request received, dispatching to handler");
+                                            let id = id.clone();
+                                            let tx = read_tx.clone();
+                                            tokio::spawn(async move {
+                                                let result = handler(params).await;
+                                                let ack = WsRequest {
+                                                    id: Some(id),
+                                                    event: "rpc-request:ack".into(),
+                                                    data: result,
+                                                };
+                                                if let Ok(json) = serde_json::to_string(&ack) {
+                                                    let _ = tx.send(Message::Text(json.into()));
+                                                }
+                                            });
                                         }
+                                        continue;
                                     }
 
                                     // Event handler

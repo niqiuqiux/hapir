@@ -82,10 +82,10 @@ where
                     return Err(error);
                 }
 
-                if let Some(max) = options.max_attempts {
-                    if attempt >= max {
-                        return Err(error);
-                    }
+                if let Some(max) = options.max_attempts
+                    && attempt >= max
+                {
+                    return Err(error);
                 }
 
                 let exp_delay =

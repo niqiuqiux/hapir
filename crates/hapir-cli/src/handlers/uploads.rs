@@ -19,10 +19,10 @@ fn upload_dir(session_id: &str) -> PathBuf {
 /// Clean up the upload directory for a session.
 pub async fn cleanup_upload_dir(session_id: &str) {
     let dir = upload_dir(session_id);
-    if dir.exists() {
-        if let Err(e) = tokio::fs::remove_dir_all(&dir).await {
-            debug!("Failed to cleanup upload dir {}: {}", dir.display(), e);
-        }
+    if dir.exists()
+        && let Err(e) = tokio::fs::remove_dir_all(&dir).await
+    {
+        debug!("Failed to cleanup upload dir {}: {}", dir.display(), e);
     }
 }
 

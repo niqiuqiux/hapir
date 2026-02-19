@@ -123,13 +123,13 @@ async fn create_machine(
     let namespace = body.namespace.as_deref().unwrap_or(&auth.namespace);
 
     // Check if existing machine belongs to a different namespace
-    if let Some(existing) = state.sync_engine.get_machine(&body.id).await {
-        if existing.namespace != namespace {
-            return (
-                StatusCode::FORBIDDEN,
-                Json(json!({"error": "Machine access denied"})),
-            );
-        }
+    if let Some(existing) = state.sync_engine.get_machine(&body.id).await
+        && existing.namespace != namespace
+    {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"error": "Machine access denied"})),
+        );
     }
 
     match state.sync_engine.get_or_create_machine(

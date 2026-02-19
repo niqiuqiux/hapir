@@ -73,12 +73,11 @@ fn collect_process_tree(pid: u32) -> Vec<u32> {
     if let Ok(output) = std::process::Command::new("pgrep")
         .args(["-P", &pid.to_string()])
         .output()
+        && let Ok(stdout) = String::from_utf8(output.stdout)
     {
-        if let Ok(stdout) = String::from_utf8(output.stdout) {
-            for line in stdout.lines() {
-                if let Ok(child_pid) = line.trim().parse::<u32>() {
-                    pids.extend(collect_process_tree(child_pid));
-                }
+        for line in stdout.lines() {
+            if let Ok(child_pid) = line.trim().parse::<u32>() {
+                pids.extend(collect_process_tree(child_pid));
             }
         }
     }

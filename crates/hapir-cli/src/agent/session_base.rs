@@ -130,15 +130,15 @@ impl<Mode: Clone + Send + 'static> AgentSessionBase<Mode> {
             return String::new();
         }
         let mut obj = serde_json::Map::new();
-        if let Some(pm) = pm {
-            if let Ok(v) = serde_json::to_value(pm) {
-                obj.insert("permissionMode".to_string(), v);
-            }
+        if let Some(pm) = pm
+            && let Ok(v) = serde_json::to_value(pm)
+        {
+            obj.insert("permissionMode".to_string(), v);
         }
-        if let Some(mm) = mm {
-            if let Ok(v) = serde_json::to_value(mm) {
-                obj.insert("modelMode".to_string(), v);
-            }
+        if let Some(mm) = mm
+            && let Ok(v) = serde_json::to_value(mm)
+        {
+            obj.insert("modelMode".to_string(), v);
         }
         serde_json::Value::Object(obj).to_string()
     }

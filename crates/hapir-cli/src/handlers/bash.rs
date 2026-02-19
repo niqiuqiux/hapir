@@ -25,10 +25,10 @@ pub async fn register_bash_handlers(rpc: &(impl RpcRegistry + Sync), working_dir
                 .and_then(|v| v.as_u64())
                 .unwrap_or(30_000);
 
-            if let Some(ref cwd) = cwd_override {
-                if let Err(e) = validate_path(cwd, &wd) {
-                    return json!({"success": false, "error": e});
-                }
+            if let Some(ref cwd) = cwd_override
+                && let Err(e) = validate_path(cwd, &wd)
+            {
+                return json!({"success": false, "error": e});
             }
 
             let cwd = cwd_override.unwrap_or_else(|| wd.to_string());

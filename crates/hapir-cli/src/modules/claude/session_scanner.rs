@@ -75,10 +75,10 @@ impl SessionScanner {
         for sid in &self.pending_sessions {
             files.push(self.session_file_path(sid));
         }
-        if let Some(ref sid) = self.current_session_id {
-            if !self.pending_sessions.contains(sid) {
-                files.push(self.session_file_path(sid));
-            }
+        if let Some(ref sid) = self.current_session_id
+            && !self.pending_sessions.contains(sid)
+        {
+            files.push(self.session_file_path(sid));
         }
 
         let mut scanned = HashSet::new();
@@ -181,10 +181,10 @@ async fn read_session_log(
         };
 
         // Skip internal event types
-        if let Some(msg_type) = parsed.get("type").and_then(|v| v.as_str()) {
-            if INTERNAL_CLAUDE_EVENT_TYPES.contains(&msg_type) {
-                continue;
-            }
+        if let Some(msg_type) = parsed.get("type").and_then(|v| v.as_str())
+            && INTERNAL_CLAUDE_EVENT_TYPES.contains(&msg_type)
+        {
+            continue;
         }
 
         match serde_json::from_value::<RawJsonLines>(parsed) {

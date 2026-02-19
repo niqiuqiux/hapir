@@ -184,10 +184,10 @@ impl AcpMessageHandler {
 
         match update_type {
             constants::AGENT_MESSAGE_CHUNK => {
-                if let Some(content) = obj.get("content") {
-                    if let Some(text) = extract_text_content(content) {
-                        self.send_text_delta(text);
-                    }
+                if let Some(content) = obj.get("content")
+                    && let Some(text) = extract_text_content(content)
+                {
+                    self.send_text_delta(text);
                 }
             }
             constants::AGENT_THOUGHT_CHUNK => {
@@ -267,15 +267,15 @@ impl AcpMessageHandler {
                 input,
                 status,
             });
-        } else if let Some(existing) = self.tool_calls.get(&tool_call_id) {
-            if status == ToolCallStatus::InProgress || status == ToolCallStatus::Pending {
-                (self.on_message)(AgentMessage::ToolCall {
-                    id: tool_call_id.clone(),
-                    name: existing.name.clone(),
-                    input: existing.input.clone(),
-                    status,
-                });
-            }
+        } else if let Some(existing) = self.tool_calls.get(&tool_call_id)
+            && (status == ToolCallStatus::InProgress || status == ToolCallStatus::Pending)
+        {
+            (self.on_message)(AgentMessage::ToolCall {
+                id: tool_call_id.clone(),
+                name: existing.name.clone(),
+                input: existing.input.clone(),
+                status,
+            });
         }
 
         if status == ToolCallStatus::Completed || status == ToolCallStatus::Failed {

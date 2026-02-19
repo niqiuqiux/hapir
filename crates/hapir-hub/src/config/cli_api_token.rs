@@ -49,37 +49,37 @@ pub fn get_or_create_cli_api_token(data_dir: &Path) -> Result<CliApiTokenResult>
     let settings_path = settings_file_path(data_dir);
 
     // Check env
-    if let Ok(env_token) = std::env::var("CLI_API_TOKEN") {
-        if !env_token.is_empty() {
-            let token = strip_namespace_suffix(&env_token);
-            if is_weak_token(&token) {
-                warn!("CLI_API_TOKEN appears to be weak");
-            }
-            // Persist to file if not already saved
-            if let Ok(Some(mut settings)) = read_settings(&settings_path) {
-                if settings.cli_api_token.is_none() {
-                    settings.cli_api_token = Some(token.clone());
-                    let _ = write_settings(&settings_path, &settings);
-                }
-            }
-            return Ok(CliApiTokenResult {
-                token,
-                source: CliApiTokenSource::Env,
-                is_new: false,
-            });
+    if let Ok(env_token) = std::env::var("CLI_API_TOKEN")
+        && !env_token.is_empty()
+    {
+        let token = strip_namespace_suffix(&env_token);
+        if is_weak_token(&token) {
+            warn!("CLI_API_TOKEN appears to be weak");
         }
+        // Persist to file if not already saved
+        if let Ok(Some(mut settings)) = read_settings(&settings_path)
+            && settings.cli_api_token.is_none()
+        {
+            settings.cli_api_token = Some(token.clone());
+            let _ = write_settings(&settings_path, &settings);
+        }
+        return Ok(CliApiTokenResult {
+            token,
+            source: CliApiTokenSource::Env,
+            is_new: false,
+        });
     }
 
     // Check file
-    if let Ok(Some(settings)) = read_settings(&settings_path) {
-        if let Some(ref file_token) = settings.cli_api_token {
-            let token = strip_namespace_suffix(file_token);
-            return Ok(CliApiTokenResult {
-                token,
-                source: CliApiTokenSource::File,
-                is_new: false,
-            });
-        }
+    if let Ok(Some(settings)) = read_settings(&settings_path)
+        && let Some(ref file_token) = settings.cli_api_token
+    {
+        let token = strip_namespace_suffix(file_token);
+        return Ok(CliApiTokenResult {
+            token,
+            source: CliApiTokenSource::File,
+            is_new: false,
+        });
     }
 
     // Generate

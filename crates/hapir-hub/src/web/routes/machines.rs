@@ -81,13 +81,13 @@ async fn spawn_machine(
             Json(json!({"error": "Invalid agent"})),
         );
     }
-    if let Some(ref st) = body.session_type {
-        if !matches!(st.as_str(), "simple" | "worktree") {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({"error": "Invalid sessionType"})),
-            );
-        }
+    if let Some(ref st) = body.session_type
+        && !matches!(st.as_str(), "simple" | "worktree")
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Invalid sessionType"})),
+        );
     }
 
     let result = state.sync_engine

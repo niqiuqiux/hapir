@@ -22,10 +22,10 @@ pub fn sensitive_env_keys() -> &'static [&'static str] {
 /// Checks `$SHELL` first, then falls back to `/bin/zsh` on macOS
 /// or `/bin/bash` elsewhere.
 pub fn default_shell() -> String {
-    if let Ok(shell) = std::env::var("SHELL") {
-        if !shell.is_empty() {
-            return shell;
-        }
+    if let Ok(shell) = std::env::var("SHELL")
+        && !shell.is_empty()
+    {
+        return shell;
     }
 
     if cfg!(target_os = "macos") {

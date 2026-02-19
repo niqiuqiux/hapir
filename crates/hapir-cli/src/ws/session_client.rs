@@ -65,23 +65,22 @@ impl WsSessionClient {
             tokio::spawn(async move {
                 if let Some(new_ver) = data.get("metadataVersion").and_then(|v| v.as_i64()) {
                     let current = *md_ver.lock().await;
-                    if new_ver > current {
-                        if let Some(new_md) = data.get("metadata") {
-                            if let Ok(parsed) = serde_json::from_value::<Metadata>(new_md.clone()) {
-                                *md.lock().await = Some(parsed);
-                                *md_ver.lock().await = new_ver;
-                            }
-                        }
+                    if new_ver > current
+                        && let Some(new_md) = data.get("metadata")
+                        && let Ok(parsed) = serde_json::from_value::<Metadata>(new_md.clone())
+                    {
+                        *md.lock().await = Some(parsed);
+                        *md_ver.lock().await = new_ver;
                     }
                 }
 
                 if let Some(new_ver) = data.get("agentStateVersion").and_then(|v| v.as_i64()) {
                     let current = *as_ver.lock().await;
-                    if new_ver > current {
-                        if let Some(new_state) = data.get("agentState") {
-                            *as_.lock().await = Some(new_state.clone());
-                            *as_ver.lock().await = new_ver;
-                        }
+                    if new_ver > current
+                        && let Some(new_state) = data.get("agentState")
+                    {
+                        *as_.lock().await = Some(new_state.clone());
+                        *as_ver.lock().await = new_ver;
                     }
                 }
 
@@ -278,10 +277,10 @@ async fn apply_versioned_ack<T: serde::de::DeserializeOwned + Clone>(
             if let Some(ver) = ack.get("version").and_then(|v| v.as_i64()) {
                 *local_version.lock().await = ver;
             }
-            if let Some(val) = ack.get(value_key) {
-                if let Ok(parsed) = serde_json::from_value::<T>(val.clone()) {
-                    *local_value.lock().await = Some(parsed);
-                }
+            if let Some(val) = ack.get(value_key)
+                && let Ok(parsed) = serde_json::from_value::<T>(val.clone())
+            {
+                *local_value.lock().await = Some(parsed);
             }
             if result == "version-mismatch" {
                 debug!("version mismatch, local state updated from server");

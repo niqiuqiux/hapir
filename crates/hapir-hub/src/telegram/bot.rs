@@ -72,29 +72,29 @@ impl HappyBot {
                     offset = Some(update.update_id + 1);
 
                     // Handle commands
-                    if let Some(ref msg) = update.message {
-                        if let Some(ref text) = msg.text {
-                            let chat_id = msg.chat.id;
-                            if text.starts_with("/start") || text.starts_with("/app") {
-                                let keyboard = InlineKeyboardMarkup {
-                                    inline_keyboard: vec![vec![InlineKeyboardButton {
-                                        text: "Open App".into(),
-                                        callback_data: None,
-                                        web_app: Some(WebAppInfo {
-                                            url: public_url.clone(),
-                                        }),
-                                    }]],
-                                };
-                                let reply = if text.starts_with("/start") {
-                                    "Welcome to HAPIR Bot!\n\nUse the Mini App for full session management."
-                                } else {
-                                    "Open HAPIR Mini App:"
-                                };
-                                if let Err(e) =
-                                    api.send_message(chat_id, reply, Some(&keyboard)).await
-                                {
-                                    error!(error = %e, "failed to reply to command");
-                                }
+                    if let Some(ref msg) = update.message
+                        && let Some(ref text) = msg.text
+                    {
+                        let chat_id = msg.chat.id;
+                        if text.starts_with("/start") || text.starts_with("/app") {
+                            let keyboard = InlineKeyboardMarkup {
+                                inline_keyboard: vec![vec![InlineKeyboardButton {
+                                    text: "Open App".into(),
+                                    callback_data: None,
+                                    web_app: Some(WebAppInfo {
+                                        url: public_url.clone(),
+                                    }),
+                                }]],
+                            };
+                            let reply = if text.starts_with("/start") {
+                                "Welcome to HAPIR Bot!\n\nUse the Mini App for full session management."
+                            } else {
+                                "Open HAPIR Mini App:"
+                            };
+                            if let Err(e) =
+                                api.send_message(chat_id, reply, Some(&keyboard)).await
+                            {
+                                error!(error = %e, "failed to reply to command");
                             }
                         }
                     }

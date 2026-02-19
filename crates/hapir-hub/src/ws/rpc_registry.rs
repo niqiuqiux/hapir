@@ -27,10 +27,10 @@ impl RpcRegistry {
     }
 
     pub fn unregister(&mut self, conn_id: &str, method: &str) {
-        if let Some(cid) = self.method_to_conn.get(method) {
-            if cid == conn_id {
-                self.method_to_conn.remove(method);
-            }
+        if let Some(cid) = self.method_to_conn.get(method)
+            && cid == conn_id
+        {
+            self.method_to_conn.remove(method);
         }
         if let Some(methods) = self.conn_to_methods.get_mut(conn_id) {
             methods.remove(method);
@@ -43,10 +43,10 @@ impl RpcRegistry {
     pub fn unregister_all(&mut self, conn_id: &str) {
         if let Some(methods) = self.conn_to_methods.remove(conn_id) {
             for method in methods {
-                if let Some(cid) = self.method_to_conn.get(&method) {
-                    if cid == conn_id {
-                        self.method_to_conn.remove(&method);
-                    }
+                if let Some(cid) = self.method_to_conn.get(&method)
+                    && cid == conn_id
+                {
+                    self.method_to_conn.remove(&method);
                 }
             }
         }

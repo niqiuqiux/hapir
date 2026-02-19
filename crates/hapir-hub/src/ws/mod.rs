@@ -187,7 +187,7 @@ async fn handle_cli_ws(
     }
 
     // Outgoing message pump
-    let _conn_id_out = conn_id.clone();
+    let conn_id_out = conn_id.clone();
     let out_task = tokio::spawn(async move {
         while let Some(msg) = out_rx.recv().await {
             let result = match msg {
@@ -197,7 +197,8 @@ async fn handle_cli_ws(
                     break; // Drop ws_tx to force-close the connection
                 }
             };
-            if result.is_err() {
+            if let Err(e) = result {
+                debug!(conn_id = %conn_id_out, error = %e, "WebSocket send failed, closing outgoing pump");
                 break;
             }
         }
@@ -325,6 +326,7 @@ async fn handle_terminal_ws(socket: WebSocket, state: WsState, namespace: String
     debug!(conn_id = %conn_id, namespace = %namespace, "Terminal WebSocket connected");
 
     // Outgoing pump
+    let conn_id_out = conn_id.clone();
     let out_task = tokio::spawn(async move {
         while let Some(msg) = out_rx.recv().await {
             let result = match msg {
@@ -334,7 +336,8 @@ async fn handle_terminal_ws(socket: WebSocket, state: WsState, namespace: String
                     break; // Drop ws_tx to force-close the connection
                 }
             };
-            if result.is_err() {
+            if let Err(e) = result {
+                debug!(conn_id = %conn_id_out, error = %e, "Terminal WebSocket send failed, closing outgoing pump");
                 break;
             }
         }
@@ -366,17 +369,6 @@ async fn handle_terminal_ws(socket: WebSocket, state: WsState, namespace: String
         };
         let data = parsed.get("data").cloned().unwrap_or(Value::Null);
         let request_id = parsed.get("id").and_then(|v| v.as_str()).map(String::from);
-
-        // Also handle forwarded terminal events from CLI (ready, output, exit, error)
-        match event.as_str() {
-            "terminal:ready" | "terminal:output" | "terminal:exit" | "terminal:error" => {
-                // These come from CLI → forward to terminal socket
-                // But in our architecture, the terminal socket also sends create/write/resize/close
-                // Fall through to terminal handler
-            }
-            _ => {}
-        }
-
         let response = handlers::terminal::handle_terminal_event(
             &conn_id,
             &namespace,

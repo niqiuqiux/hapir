@@ -86,13 +86,13 @@ async fn bind_handler(
     }
 
     // Create the user if it does not exist yet.
-    if existing_user.is_none() {
-        if let Err(e) = users::add_user(&conn, "telegram", &platform_user_id, &namespace) {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": format!("Failed to create user: {e}")})),
-            );
-        }
+    if existing_user.is_none()
+        && let Err(e) = users::add_user(&conn, "telegram", &platform_user_id, &namespace)
+    {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": format!("Failed to create user: {e}")})),
+        );
     }
 
     // Drop the connection guard before potentially blocking calls.

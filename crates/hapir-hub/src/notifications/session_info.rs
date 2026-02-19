@@ -10,17 +10,17 @@ use hapir_shared::schemas::Session;
 pub fn get_session_name(session: &Session) -> String {
     if let Some(ref metadata) = session.metadata {
         // Explicit name
-        if let Some(ref name) = metadata.name {
-            if !name.is_empty() {
-                return name.clone();
-            }
+        if let Some(ref name) = metadata.name
+            && !name.is_empty()
+        {
+            return name.clone();
         }
 
         // Summary text
-        if let Some(ref summary) = metadata.summary {
-            if !summary.text.is_empty() {
-                return summary.text.clone();
-            }
+        if let Some(ref summary) = metadata.summary
+            && !summary.text.is_empty()
+        {
+            return summary.text.clone();
         }
 
         // Last path component

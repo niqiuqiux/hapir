@@ -88,17 +88,15 @@ pub fn update_settings(
                 }
 
                 // Check for stale lock
-                if let Ok(meta) = std::fs::metadata(&lock_path) {
-                    if let Ok(modified) = meta.modified() {
-                        if SystemTime::now()
-                            .duration_since(modified)
-                            .unwrap_or(Duration::ZERO)
-                            > STALE_LOCK_TIMEOUT
-                        {
-                            let _ = std::fs::remove_file(&lock_path);
-                            continue;
-                        }
-                    }
+                if let Ok(meta) = std::fs::metadata(&lock_path)
+                    && let Ok(modified) = meta.modified()
+                    && SystemTime::now()
+                        .duration_since(modified)
+                        .unwrap_or(Duration::ZERO)
+                        > STALE_LOCK_TIMEOUT
+                {
+                    let _ = std::fs::remove_file(&lock_path);
+                    continue;
                 }
 
                 std::thread::sleep(LOCK_RETRY_INTERVAL);
@@ -161,13 +159,12 @@ pub fn acquire_runner_lock(lock_path: &Path, max_attempts: u32) -> Option<Runner
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
                 // Check if holder process is still alive
-                if let Ok(content) = std::fs::read_to_string(lock_path) {
-                    if let Ok(pid) = content.trim().parse::<u32>() {
-                        if !is_process_alive(pid) {
-                            let _ = std::fs::remove_file(lock_path);
-                            continue;
-                        }
-                    }
+                if let Ok(content) = std::fs::read_to_string(lock_path)
+                    && let Ok(pid) = content.trim().parse::<u32>()
+                    && !is_process_alive(pid)
+                {
+                    let _ = std::fs::remove_file(lock_path);
+                    continue;
                 }
 
                 if attempt == max_attempts {

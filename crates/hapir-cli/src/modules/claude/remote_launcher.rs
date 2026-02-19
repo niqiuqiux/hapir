@@ -229,19 +229,19 @@ pub async fn claude_remote_launcher(
 
                     // Track tool_use blocks for permission ID resolution
                     for block in &message.content {
-                        if block.get("type").and_then(|v| v.as_str()) == Some("tool_use") {
-                            if let Some(id) = block.get("id").and_then(|v| v.as_str()) {
-                                let name = block.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                                let input = block.get("input").cloned().unwrap_or(Value::Null);
-                                // Only add if not already tracked
-                                if !tracked_tool_calls.iter().any(|tc| tc.id == id) {
-                                    tracked_tool_calls.push(TrackedToolCall {
-                                        id: id.to_string(),
-                                        name: name.to_string(),
-                                        input,
-                                        used: false,
-                                    });
-                                }
+                        if block.get("type").and_then(|v| v.as_str()) == Some("tool_use")
+                            && let Some(id) = block.get("id").and_then(|v| v.as_str())
+                        {
+                            let name = block.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                            let input = block.get("input").cloned().unwrap_or(Value::Null);
+                            // Only add if not already tracked
+                            if !tracked_tool_calls.iter().any(|tc| tc.id == id) {
+                                tracked_tool_calls.push(TrackedToolCall {
+                                    id: id.to_string(),
+                                    name: name.to_string(),
+                                    input,
+                                    used: false,
+                                });
                             }
                         }
                     }
@@ -249,12 +249,11 @@ pub async fn claude_remote_launcher(
                     // Extract text for streaming
                     let mut current_text = String::new();
                     for block in &message.content {
-                        if let Some(block_type) = block.get("type").and_then(|v| v.as_str()) {
-                            if block_type == "text" {
-                                if let Some(text) = block.get("text").and_then(|v| v.as_str()) {
-                                    current_text.push_str(text);
-                                }
-                            }
+                        if let Some(block_type) = block.get("type").and_then(|v| v.as_str())
+                            && block_type == "text"
+                            && let Some(text) = block.get("text").and_then(|v| v.as_str())
+                        {
+                            current_text.push_str(text);
                         }
                     }
 
@@ -394,29 +393,29 @@ pub async fn claude_remote_launcher(
                         accumulated_text.clear();
                     }
 
-                    if is_error {
-                        if let Some(ref error_text) = result {
-                            session
-                                .base
-                                .ws_client
-                                .send_message(serde_json::json!({
-                                    "role": "assistant",
-                                    "content": {
-                                        "type": "output",
-                                        "data": {
-                                            "type": "assistant",
-                                            "message": {
-                                                "role": "assistant",
-                                                "content": [{
-                                                    "type": "text",
-                                                    "text": error_text,
-                                                }]
-                                            }
+                    if is_error
+                        && let Some(ref error_text) = result
+                    {
+                        session
+                            .base
+                            .ws_client
+                            .send_message(serde_json::json!({
+                                "role": "assistant",
+                                "content": {
+                                    "type": "output",
+                                    "data": {
+                                        "type": "assistant",
+                                        "message": {
+                                            "role": "assistant",
+                                            "content": [{
+                                                "type": "text",
+                                                "text": error_text,
+                                            }]
                                         }
                                     }
-                                }))
-                                .await;
-                        }
+                                }
+                            }))
+                            .await;
                     }
 
                     if !result_session_id.is_empty() {

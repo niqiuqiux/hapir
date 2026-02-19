@@ -54,14 +54,14 @@ pub async fn register_directory_handlers(rpc: &(impl RpcRegistry + Sync), workin
                     });
 
                     // Get size/modified for non-symlinks
-                    if file_type.as_ref().is_some_and(|ft| !ft.is_symlink()) {
-                        if let Ok(meta) = entry.metadata().await {
-                            entry_json["size"] = json!(meta.len());
-                            if let Ok(modified) = meta.modified() {
-                                if let Ok(dur) = modified.duration_since(std::time::UNIX_EPOCH) {
-                                    entry_json["modified"] = json!(dur.as_millis() as u64);
-                                }
-                            }
+                    if file_type.as_ref().is_some_and(|ft| !ft.is_symlink())
+                        && let Ok(meta) = entry.metadata().await
+                    {
+                        entry_json["size"] = json!(meta.len());
+                        if let Ok(modified) = meta.modified()
+                            && let Ok(dur) = modified.duration_since(std::time::UNIX_EPOCH)
+                        {
+                            entry_json["modified"] = json!(dur.as_millis() as u64);
                         }
                     }
 
@@ -143,10 +143,10 @@ async fn build_tree(path: &Path, name: &str, depth: usize, max_depth: usize) -> 
         "size": meta.len(),
     });
 
-    if let Ok(modified) = meta.modified() {
-        if let Ok(dur) = modified.duration_since(std::time::UNIX_EPOCH) {
-            node["modified"] = json!(dur.as_millis() as u64);
-        }
+    if let Ok(modified) = meta.modified()
+        && let Ok(dur) = modified.duration_since(std::time::UNIX_EPOCH)
+    {
+        node["modified"] = json!(dur.as_millis() as u64);
     }
 
     if meta.is_dir() && depth < max_depth {
