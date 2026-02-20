@@ -6,6 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use uuid::Uuid;
 
 /// A WebSocket message envelope.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -50,6 +51,36 @@ impl WsMessage {
     /// Check if this message is an ack response.
     pub fn is_ack(&self) -> bool {
         self.event.ends_with(":ack")
+    }
+}
+
+/// Broadcast payload used inside `WsMessage::event("update", ...)`.
+///
+/// Wraps a typed body with a unique id, sequence number, and timestamp.
+/// Mirrors the TS hub's `{id, seq, createdAt, body: {t, ...}}` structure.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsBroadcast {
+    pub id: String,
+    pub seq: i64,
+    pub created_at: i64,
+    pub body: Value,
+}
+
+impl WsBroadcast {
+    pub fn new(seq: i64, created_at: i64, body: Value) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            seq,
+            created_at,
+            body,
+        }
+    }
+
+    /// Wrap into a `WsMessage` with event name `"update"` and serialize to string.
+    pub fn to_ws_string(&self) -> String {
+        let msg = WsMessage::event("update", serde_json::to_value(self).unwrap_or_default());
+        serde_json::to_string(&msg).unwrap_or_default()
     }
 }
 

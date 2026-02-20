@@ -4,7 +4,7 @@ pub mod rpc_registry;
 pub mod terminal_registry;
 
 use std::sync::Arc;
-
+use std::time::SystemTime;
 use axum::http::StatusCode;
 use axum::{
     extract::{
@@ -21,6 +21,7 @@ use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
+use hapir_shared::ws_protocol::WsMessage;
 use crate::config::cli_api_token;
 use crate::store::Store;
 use crate::sync::SyncEngine;
@@ -179,6 +180,7 @@ async fn handle_cli_ws(
         info!(
             conn_id = %conn_id,
             namespace = %namespace,
+            session_id = ?session_id,
             machine_id = ?machine_id,
             "Runner WebSocket 已连接"
         );
@@ -276,12 +278,8 @@ async fn handle_cli_ws(
 
         // Send ack if this was a request
         if let Some(rid) = request_id {
-            let ack = serde_json::json!({
-                "id": rid,
-                "event": format!("{event}:ack"),
-                "data": response.unwrap_or(Value::Null),
-            });
-            state.conn_mgr.send_to(&conn_id, &ack.to_string()).await;
+            let ack = WsMessage::ack(rid, &event, response.unwrap_or(Value::Null));
+            state.conn_mgr.send_to(&conn_id, &serde_json::to_string(&ack).unwrap_or_default()).await;
         }
     }
 
@@ -293,7 +291,7 @@ async fn handle_cli_ws(
     }
     if let Some(ref sid) = session_id {
         info!(conn_id = %conn_id, session_id = %sid, "Session WebSocket 已断开");
-        let now = std::time::SystemTime::now()
+        let now = SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as i64;
@@ -384,12 +382,8 @@ async fn handle_terminal_ws(socket: WebSocket, state: WsState, namespace: String
         .await;
 
         if let Some(rid) = request_id {
-            let ack = serde_json::json!({
-                "id": rid,
-                "event": format!("{event}:ack"),
-                "data": response.unwrap_or(Value::Null),
-            });
-            state.conn_mgr.send_to(&conn_id, &ack.to_string()).await;
+            let ack = WsMessage::ack(rid, &event, response.unwrap_or(Value::Null));
+            state.conn_mgr.send_to(&conn_id, &serde_json::to_string(&ack).unwrap_or_default()).await;
         }
     }
 

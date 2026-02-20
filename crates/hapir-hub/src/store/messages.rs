@@ -2,7 +2,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 use serde_json::Value;
-
+use uuid::Uuid;
 use super::types::StoredMessage;
 
 fn now_millis() -> i64 {
@@ -49,7 +49,7 @@ pub fn add_message(
         .query_row(rusqlite::params![session_id], |row| row.get(0))?;
 
     let now = now_millis();
-    let id = uuid::Uuid::new_v4().to_string();
+    let id = Uuid::new_v4().to_string();
     let json = serde_json::to_string(content)?;
 
     conn.execute(

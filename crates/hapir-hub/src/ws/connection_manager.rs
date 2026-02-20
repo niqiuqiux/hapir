@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 use tokio::sync::{mpsc, oneshot, RwLock};
+use hapir_shared::ws_protocol::WsMessage;
 
 use crate::sync::rpc_gateway::RpcTransport;
 use super::rpc_registry::RpcRegistry;
@@ -239,16 +240,12 @@ impl ConnectionManager {
             PendingRpc { tx: resp_tx },
         );
 
-        let msg = serde_json::json!({
-            "id": request_id,
-            "event": "rpc-request",
-            "data": {
-                "method": method,
-                "params": serde_json::to_string(&params).unwrap_or_default()
-            }
-        });
+        let msg = WsMessage::request(&request_id, "rpc-request", serde_json::json!({
+            "method": method,
+            "params": serde_json::to_string(&params).unwrap_or_default()
+        }));
 
-        if tx.send(WsOutMessage::Text(msg.to_string())).is_err() {
+        if tx.send(WsOutMessage::Text(serde_json::to_string(&msg).unwrap_or_default())).is_err() {
             self.pending_rpcs.write().await.remove(&request_id);
             return Err(RpcCallError::SendFailed);
         }
