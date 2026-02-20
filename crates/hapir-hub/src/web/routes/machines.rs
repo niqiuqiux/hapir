@@ -109,7 +109,18 @@ async fn spawn_machine(
                 serde_json::to_value(&spawn_result).unwrap_or_else(|_| json!({"type": "error"}));
             (StatusCode::OK, Json(val))
         }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e}))),
+        Err(e) => {
+            let message = if e.contains("not registered") {
+                "Machine is offline or not connected. Please check that the runner is running on the target machine."
+            } else if e.contains("timed out") {
+                "Request timed out. The machine may be busy or unreachable."
+            } else if e.contains("connection lost") || e.contains("send failed") {
+                "Lost connection to the machine. Please check the runner status."
+            } else {
+                &e
+            };
+            (StatusCode::OK, Json(json!({"type": "error", "message": message})))
+        }
     }
 }
 

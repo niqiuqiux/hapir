@@ -284,7 +284,14 @@ impl RpcGateway {
                     message: Some("Unexpected spawn result".into()),
                 })
             }
-            Err(e) => Err(e.to_string()),
+            Err(e) => {
+                let msg = e.to_string();
+                Ok(SpawnSessionResult {
+                    result_type: "error".into(),
+                    session_id: None,
+                    message: Some(msg),
+                })
+            }
         }
     }
 

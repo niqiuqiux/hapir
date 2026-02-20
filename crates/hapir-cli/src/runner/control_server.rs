@@ -382,6 +382,42 @@ pub async fn do_spawn_session(
         "[spawnSession] final CLI args"
     );
 
+    let exe_exists = exe.exists();
+    let dir_exists = std::path::Path::new(&spawn_directory).exists();
+    info!(
+        session_id = %session_id,
+        exe = %exe.display(),
+        exe_exists = exe_exists,
+        directory = %spawn_directory,
+        dir_exists = dir_exists,
+        "[spawnSession] pre-spawn check"
+    );
+    if !exe_exists || !dir_exists {
+        let detail = match (exe_exists, dir_exists) {
+            (false, false) => format!(
+                "Both executable '{}' and directory '{}' do not exist",
+                exe.display(), spawn_directory
+            ),
+            (false, true) => format!(
+                "Executable '{}' does not exist. The runner may need to be restarted after a rebuild.",
+                exe.display()
+            ),
+            (true, false) => format!(
+                "Directory '{}' does not exist",
+                spawn_directory
+            ),
+            _ => unreachable!(),
+        };
+        warn!(session_id = %session_id, "{detail}");
+        maybe_cleanup_worktree(&worktree_info, None).await;
+        return SpawnSessionResponse {
+            r#type: "error".to_string(),
+            session_id: None,
+            error: Some(detail),
+            directory: None,
+        };
+    }
+
     // Build command — capture stderr for debugging, detach on Unix
     let mut cmd = tokio::process::Command::new(&exe);
     cmd.args(&args)
@@ -606,10 +642,25 @@ pub async fn do_spawn_session(
         Err(e) => {
             warn!(error = %e, "failed to spawn session process");
             maybe_cleanup_worktree(&worktree_info, None).await;
+            let msg = match e.kind() {
+                std::io::ErrorKind::NotFound => {
+                    format!(
+                        "Could not find the hapir executable at '{}'. It may have been moved or deleted. Please reinstall or check your PATH.",
+                        exe.display()
+                    )
+                }
+                std::io::ErrorKind::PermissionDenied => {
+                    format!(
+                        "Permission denied when trying to run '{}'. Check that the file is executable.",
+                        exe.display()
+                    )
+                }
+                _ => format!("Failed to start session process: {e}"),
+            };
             SpawnSessionResponse {
                 r#type: "error".to_string(),
                 session_id: None,
-                error: Some(format!("failed to spawn process: {e}")),
+                error: Some(msg),
                 directory: None,
             }
         }
