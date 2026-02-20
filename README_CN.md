@@ -1,5 +1,7 @@
 # HAPIR
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Shirasuki/hapir)
+
 Claude Code / Codex / Gemini / OpenCode 的控制台，随时随地 vibe coding。
 
 运行 AI 编程会话，通过 Web / PWA / Telegram Mini App 远程控制。

@@ -1,5 +1,7 @@
 # HAPIR
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Shirasuki/hapir)
+
 App for Claude Code / Codex / Gemini / OpenCode, vibe coding anytime, anywhere.
 
 Run AI coding sessions and control them remotely through Web / PWA / Telegram Mini App.
