@@ -132,12 +132,13 @@ fn verify_jwt(token: &str, secret: &[u8]) -> Option<JwtClaims> {
     use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 
     #[derive(serde::Deserialize)]
+    #[allow(dead_code)]
     struct Claims {
         ns: String,
+        exp: u64,
     }
 
-    let mut validation = Validation::new(Algorithm::HS256);
-    validation.required_spec_claims.clear();
+    let validation = Validation::new(Algorithm::HS256);
 
     let data = decode::<Claims>(token, &DecodingKey::from_secret(secret), &validation).ok()?;
 
