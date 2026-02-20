@@ -1,12 +1,16 @@
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
-
+use std::time::Duration;
+use anyhow::bail;
 use hapir_shared::modes::{ModelMode, PermissionMode};
 use hapir_shared::schemas::{AnswersFormat, AttachmentMetadata};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::oneshot;
-
+use tokio::time::Instant;
+use tracing::{debug, warn};
 use crate::ws::connection_manager::RpcCallError;
 
 /// Trait for the RPC transport layer. The WebSocket server implements this.
@@ -16,10 +20,13 @@ pub trait RpcTransport: Send + Sync {
         &self,
         method: &str,
         params: Value,
-    ) -> Result<oneshot::Receiver<Result<Value, String>>, RpcCallError>;
+    ) -> Pin<Box<dyn Future<Output = Result<oneshot::Receiver<Result<Value, String>>, RpcCallError>> + Send + '_>>;
 
     /// Check whether a handler is registered for the given method.
-    fn has_rpc_handler(&self, method: &str) -> bool;
+    fn has_rpc_handler(
+        &self,
+        method: &str,
+    ) -> Pin<Box<dyn Future<Output = bool> + Send + '_>>;
 }
 
 // --- Response types ---
@@ -112,38 +119,38 @@ impl RpcGateway {
     }
 
     async fn rpc_call(&self, method: &str, params: Value) -> anyhow::Result<Value> {
-        tracing::debug!(method, "RPC call initiating");
+        debug!(method, "RPC call initiating");
 
         // When the handler is not yet registered, poll briefly before giving up.
         // This covers the race where the frontend queries a session right after
         // creation, before the CLI process has finished sending rpc-register.
         let rx = {
-            const MAX_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
-            const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
+            const MAX_WAIT: Duration = Duration::from_secs(5);
+            const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
-            let deadline = tokio::time::Instant::now() + MAX_WAIT;
+            let deadline = Instant::now() + MAX_WAIT;
 
             // Fast path: if already registered, skip the polling loop entirely.
             loop {
-                match self.transport.rpc_call(method, params.clone()) {
+                match self.transport.rpc_call(method, params.clone()).await {
                     Ok(rx) => break rx,
                     Err(RpcCallError::SendFailed) => {
-                        anyhow::bail!("RPC send failed (connection lost): {method}");
+                        bail!("RPC send failed (connection lost): {method}");
                     }
                     Err(RpcCallError::NotRegistered) => {
-                        if tokio::time::Instant::now() >= deadline {
-                            tracing::warn!(method, "RPC handler not registered after waiting");
-                            anyhow::bail!("RPC handler not registered: {method}");
+                        if Instant::now() >= deadline {
+                            warn!(method, "RPC handler not registered after waiting");
+                            bail!("RPC handler not registered: {method}");
                         }
-                        tracing::debug!(method, "RPC handler not yet registered, waiting…");
+                        debug!(method, "RPC handler not yet registered, waiting…");
                         tokio::time::sleep(POLL_INTERVAL).await;
                     }
                 }
             }
         };
 
-        tracing::debug!(method, "RPC call dispatched, waiting for response");
-        let result = tokio::time::timeout(std::time::Duration::from_secs(30), rx)
+        debug!(method, "RPC call dispatched, waiting for response");
+        let result = tokio::time::timeout(Duration::from_secs(30), rx)
             .await
             .map_err(|_| anyhow::anyhow!("RPC call timed out: {method}"))?
             .map_err(|_| anyhow::anyhow!("RPC call cancelled"))?

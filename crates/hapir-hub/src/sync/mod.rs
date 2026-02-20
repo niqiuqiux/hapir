@@ -14,7 +14,7 @@ use hapir_shared::modes::{ModelMode, PermissionMode};
 use hapir_shared::schemas::{AttachmentMetadata, DecryptedMessage, Session, SyncEvent};
 use serde_json::Value;
 use tokio::sync::{broadcast, mpsc, RwLock};
-
+use tracing::{debug, warn};
 use crate::store::Store;
 use event_publisher::EventPublisher;
 use machine_cache::{Machine, MachineCache};
@@ -214,13 +214,13 @@ impl SyncEngine {
         attachments: Option<&[AttachmentMetadata]>,
         sent_from: Option<&str>,
     ) -> anyhow::Result<()> {
-        tracing::debug!(session_id, text_len = text.len(), "send_message: storing and dispatching");
+        debug!(session_id, text_len = text.len(), "send_message: storing and dispatching");
         MessageService::send_message(&self.store, &self.publisher, session_id, namespace, text, local_id, attachments, sent_from)?;
 
         // Notify the session process via RPC so it can pick up the message
         match self.rpc_gateway.send_user_message(session_id, text, attachments).await {
-            Ok(resp) => tracing::debug!(session_id, ?resp, "send_message: RPC delivered"),
-            Err(e) => tracing::warn!(session_id, error = %e, "send_message: failed to deliver via RPC"),
+            Ok(resp) => debug!(session_id, ?resp, "send_message: RPC delivered"),
+            Err(e) => warn!(session_id, error = %e, "send_message: failed to deliver via RPC"),
         }
 
         Ok(())
@@ -313,7 +313,7 @@ impl SyncEngine {
     /// whether the CLI is still connected or has a handler registered.
     pub async fn archive_session(&self, session_id: &str) -> anyhow::Result<()> {
         if let Err(e) = self.rpc_gateway.kill_session(session_id).await {
-            tracing::debug!(session_id, error = %e, "killSession RPC failed (proceeding with archive)");
+            debug!(session_id, error = %e, "killSession RPC failed (proceeding with archive)");
         }
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

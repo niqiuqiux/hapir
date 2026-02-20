@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 
 use serde_json::Value;
 use tokio::sync::{mpsc, oneshot, RwLock};
@@ -267,29 +269,20 @@ impl RpcTransport for ConnectionManager {
         &self,
         method: &str,
         params: Value,
-    ) -> Result<oneshot::Receiver<Result<Value, String>>, RpcCallError> {
-        let handle = tokio::runtime::Handle::try_current()
-            .map_err(|_| RpcCallError::SendFailed)?;
+    ) -> Pin<Box<dyn Future<Output = Result<oneshot::Receiver<Result<Value, String>>, RpcCallError>> + Send + '_>> {
         let method = method.to_string();
-
-        // Use block_in_place since we're already in a tokio context
-        tokio::task::block_in_place(|| {
-            handle.block_on(self.rpc_call_internal(&method, params))
+        Box::pin(async move {
+            self.rpc_call_internal(&method, params).await
         })
     }
 
-    fn has_rpc_handler(&self, method: &str) -> bool {
-        let handle = match tokio::runtime::Handle::try_current() {
-            Ok(h) => h,
-            Err(_) => return false,
-        };
+    fn has_rpc_handler(
+        &self,
+        method: &str,
+    ) -> Pin<Box<dyn Future<Output = bool> + Send + '_>> {
         let method = method.to_string();
-        tokio::task::block_in_place(|| {
-            handle.block_on(self.has_rpc_handler(&method))
+        Box::pin(async move {
+            self.rpc_registry.read().await.get_conn_id_for_method(&method).is_some()
         })
     }
 }
-
-// Safety: ConnectionManager uses RwLock internally
-unsafe impl Send for ConnectionManager {}
-unsafe impl Sync for ConnectionManager {}
