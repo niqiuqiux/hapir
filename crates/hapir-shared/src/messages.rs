@@ -44,7 +44,7 @@ pub fn unwrap_role_wrapped_record_envelope(value: &Value) -> Option<RoleWrappedR
         return None;
     }
 
-    let obj = value.as_object().unwrap();
+    let obj = value.as_object()?;
 
     // .message
     if let Some(msg) = obj.get("message")
