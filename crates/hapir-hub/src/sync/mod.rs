@@ -10,18 +10,18 @@ pub mod visibility_tracker;
 
 use std::sync::Arc;
 
-use hapir_shared::modes::{ModelMode, PermissionMode};
-use hapir_shared::schemas::{AttachmentMetadata, DecryptedMessage, Session, SyncEvent};
-use serde_json::Value;
-use tokio::sync::{broadcast, mpsc, RwLock};
-use tracing::{debug, warn};
 use crate::store::Store;
 use event_publisher::EventPublisher;
+use hapir_shared::modes::{ModelMode, PermissionMode};
+use hapir_shared::schemas::{AttachmentMetadata, DecryptedMessage, Session, SyncEvent};
 use machine_cache::{Machine, MachineCache};
 use message_service::{MessageService, MessagesPageResult};
 use rpc_gateway::{RpcGateway, RpcTransport};
+use serde_json::Value;
 use session_cache::SessionCache;
 use sse_manager::{SseManager, SseMessage, SseSubscription};
+use tokio::sync::{RwLock, broadcast, mpsc};
+use tracing::{debug, warn};
 use visibility_tracker::VisibilityState;
 
 /// The central sync engine that coordinates sessions, machines, messages, and RPC.
@@ -73,7 +73,8 @@ impl SyncEngine {
         machine_id: Option<String>,
         visibility: VisibilityState,
     ) -> (mpsc::UnboundedReceiver<SseMessage>, SseSubscription) {
-        self.publisher.subscribe_sse(id, namespace, all, session_id, machine_id, visibility)
+        self.publisher
+            .subscribe_sse(id, namespace, all, session_id, machine_id, visibility)
     }
 
     pub fn unsubscribe_sse(&self, id: &str) {
@@ -94,7 +95,8 @@ impl SyncEngine {
         namespace: &str,
         state: VisibilityState,
     ) -> bool {
-        self.publisher.set_sse_visibility(subscription_id, namespace, state)
+        self.publisher
+            .set_sse_visibility(subscription_id, namespace, state)
     }
 
     pub fn send_heartbeats(&self) {
@@ -116,24 +118,47 @@ impl SyncEngine {
     }
 
     pub async fn get_sessions_by_namespace(&self, namespace: &str) -> Vec<Session> {
-        self.session_cache.read().await.get_sessions_by_namespace(namespace)
+        self.session_cache
+            .read()
+            .await
+            .get_sessions_by_namespace(namespace)
     }
 
     pub async fn get_session(&self, session_id: &str) -> Option<Session> {
-        if let Some(s) = self.session_cache.read().await.get_session(session_id).cloned() {
+        if let Some(s) = self
+            .session_cache
+            .read()
+            .await
+            .get_session(session_id)
+            .cloned()
+        {
             return Some(s);
         }
-        self.session_cache.write().await.refresh_session(session_id, &self.store, &self.publisher)
+        self.session_cache
+            .write()
+            .await
+            .refresh_session(session_id, &self.store, &self.publisher)
     }
 
-    pub async fn get_session_by_namespace(&self, session_id: &str, namespace: &str) -> Option<Session> {
+    pub async fn get_session_by_namespace(
+        &self,
+        session_id: &str,
+        namespace: &str,
+    ) -> Option<Session> {
         {
             let cache = self.session_cache.read().await;
-            if let Some(s) = cache.get_session_by_namespace(session_id, namespace).cloned() {
+            if let Some(s) = cache
+                .get_session_by_namespace(session_id, namespace)
+                .cloned()
+            {
                 return Some(s);
             }
         }
-        let session = self.session_cache.write().await.refresh_session(session_id, &self.store, &self.publisher);
+        let session = self.session_cache.write().await.refresh_session(
+            session_id,
+            &self.store,
+            &self.publisher,
+        );
         session.filter(|s| s.namespace == namespace)
     }
 
@@ -142,7 +167,12 @@ impl SyncEngine {
         session_id: &str,
         namespace: &str,
     ) -> Result<(String, Session), &'static str> {
-        self.session_cache.write().await.resolve_session_access(session_id, namespace, &self.store, &self.publisher)
+        self.session_cache.write().await.resolve_session_access(
+            session_id,
+            namespace,
+            &self.store,
+            &self.publisher,
+        )
     }
 
     pub async fn get_active_sessions(&self) -> Vec<Session> {
@@ -156,7 +186,14 @@ impl SyncEngine {
         agent_state: Option<&Value>,
         namespace: &str,
     ) -> anyhow::Result<Session> {
-        self.session_cache.write().await.get_or_create_session(tag, metadata, agent_state, namespace, &self.store, &self.publisher)
+        self.session_cache.write().await.get_or_create_session(
+            tag,
+            metadata,
+            agent_state,
+            namespace,
+            &self.store,
+            &self.publisher,
+        )
     }
 
     // --- Machine accessors ---
@@ -166,15 +203,30 @@ impl SyncEngine {
     }
 
     pub async fn get_machines_by_namespace(&self, namespace: &str) -> Vec<Machine> {
-        self.machine_cache.read().await.get_machines_by_namespace(namespace)
+        self.machine_cache
+            .read()
+            .await
+            .get_machines_by_namespace(namespace)
     }
 
     pub async fn get_machine(&self, machine_id: &str) -> Option<Machine> {
-        self.machine_cache.read().await.get_machine(machine_id).cloned()
+        self.machine_cache
+            .read()
+            .await
+            .get_machine(machine_id)
+            .cloned()
     }
 
-    pub async fn get_machine_by_namespace(&self, machine_id: &str, namespace: &str) -> Option<Machine> {
-        self.machine_cache.read().await.get_machine_by_namespace(machine_id, namespace).cloned()
+    pub async fn get_machine_by_namespace(
+        &self,
+        machine_id: &str,
+        namespace: &str,
+    ) -> Option<Machine> {
+        self.machine_cache
+            .read()
+            .await
+            .get_machine_by_namespace(machine_id, namespace)
+            .cloned()
     }
 
     pub async fn get_online_machines(&self) -> Vec<Machine> {
@@ -182,7 +234,10 @@ impl SyncEngine {
     }
 
     pub async fn get_online_machines_by_namespace(&self, namespace: &str) -> Vec<Machine> {
-        self.machine_cache.read().await.get_online_machines_by_namespace(namespace)
+        self.machine_cache
+            .read()
+            .await
+            .get_online_machines_by_namespace(namespace)
     }
 
     pub async fn get_or_create_machine(
@@ -192,16 +247,33 @@ impl SyncEngine {
         runner_state: Option<&Value>,
         namespace: &str,
     ) -> anyhow::Result<Machine> {
-        self.machine_cache.write().await.get_or_create_machine(id, metadata, runner_state, namespace, &self.store, &self.publisher)
+        self.machine_cache.write().await.get_or_create_machine(
+            id,
+            metadata,
+            runner_state,
+            namespace,
+            &self.store,
+            &self.publisher,
+        )
     }
 
     // --- Messages ---
 
-    pub fn get_messages_page(&self, session_id: &str, limit: i64, before_seq: Option<i64>) -> MessagesPageResult {
+    pub fn get_messages_page(
+        &self,
+        session_id: &str,
+        limit: i64,
+        before_seq: Option<i64>,
+    ) -> MessagesPageResult {
         MessageService::get_messages_page(&self.store, session_id, limit, before_seq)
     }
 
-    pub fn get_messages_after(&self, session_id: &str, after_seq: i64, limit: i64) -> Vec<DecryptedMessage> {
+    pub fn get_messages_after(
+        &self,
+        session_id: &str,
+        after_seq: i64,
+        limit: i64,
+    ) -> Vec<DecryptedMessage> {
         MessageService::get_messages_after(&self.store, session_id, after_seq, limit)
     }
 
@@ -214,11 +286,28 @@ impl SyncEngine {
         attachments: Option<&[AttachmentMetadata]>,
         sent_from: Option<&str>,
     ) -> anyhow::Result<()> {
-        debug!(session_id, text_len = text.len(), "send_message: storing and dispatching");
-        MessageService::send_message(&self.store, &self.publisher, session_id, namespace, text, local_id, attachments, sent_from)?;
+        debug!(
+            session_id,
+            text_len = text.len(),
+            "send_message: storing and dispatching"
+        );
+        MessageService::send_message(
+            &self.store,
+            &self.publisher,
+            session_id,
+            namespace,
+            text,
+            local_id,
+            attachments,
+            sent_from,
+        )?;
 
         // Notify the session process via RPC so it can pick up the message
-        match self.rpc_gateway.send_user_message(session_id, text, attachments).await {
+        match self
+            .rpc_gateway
+            .send_user_message(session_id, text, attachments)
+            .await
+        {
             Ok(resp) => debug!(session_id, ?resp, "send_message: RPC delivered"),
             Err(e) => warn!(session_id, error = %e, "send_message: failed to deliver via RPC"),
         }
@@ -231,17 +320,34 @@ impl SyncEngine {
     pub async fn handle_realtime_event(&self, event: SyncEvent) {
         match &event {
             SyncEvent::SessionUpdated { session_id, .. } => {
-                self.session_cache.write().await.refresh_session(session_id, &self.store, &self.publisher);
+                self.session_cache.write().await.refresh_session(
+                    session_id,
+                    &self.store,
+                    &self.publisher,
+                );
                 return;
             }
             SyncEvent::MachineUpdated { machine_id, .. } => {
-                self.machine_cache.write().await.refresh_machine(machine_id, &self.store, &self.publisher);
+                self.machine_cache.write().await.refresh_machine(
+                    machine_id,
+                    &self.store,
+                    &self.publisher,
+                );
                 return;
             }
             SyncEvent::MessageReceived { session_id, .. } => {
-                let needs_refresh = self.session_cache.read().await.get_session(session_id).is_none();
+                let needs_refresh = self
+                    .session_cache
+                    .read()
+                    .await
+                    .get_session(session_id)
+                    .is_none();
                 if needs_refresh {
-                    self.session_cache.write().await.refresh_session(session_id, &self.store, &self.publisher);
+                    self.session_cache.write().await.refresh_session(
+                        session_id,
+                        &self.store,
+                        &self.publisher,
+                    );
                 }
             }
             _ => {}
@@ -258,27 +364,52 @@ impl SyncEngine {
         model_mode: Option<ModelMode>,
     ) {
         self.session_cache.write().await.handle_session_alive(
-            sid, time, thinking, permission_mode, model_mode, &self.store, &self.publisher,
+            sid,
+            time,
+            thinking,
+            permission_mode,
+            model_mode,
+            &self.store,
+            &self.publisher,
         );
     }
 
     pub async fn handle_session_end(&self, sid: &str, time: i64) {
-        self.session_cache.write().await.handle_session_end(sid, time, &self.store, &self.publisher);
+        self.session_cache.write().await.handle_session_end(
+            sid,
+            time,
+            &self.store,
+            &self.publisher,
+        );
     }
 
     pub async fn handle_machine_alive(&self, machine_id: &str, time: i64) {
-        self.machine_cache.write().await.handle_machine_alive(machine_id, time, &self.store, &self.publisher);
+        self.machine_cache.write().await.handle_machine_alive(
+            machine_id,
+            time,
+            &self.store,
+            &self.publisher,
+        );
     }
 
     /// Mark a machine as offline immediately (e.g. on WebSocket disconnect).
     pub async fn mark_machine_offline(&self, machine_id: &str) {
-        self.machine_cache.write().await.mark_machine_offline(machine_id, &self.publisher);
+        self.machine_cache
+            .write()
+            .await
+            .mark_machine_offline(machine_id, &self.publisher);
     }
 
     /// Called periodically to expire inactive sessions and machines.
     pub async fn expire_inactive(&self) {
-        self.session_cache.write().await.expire_inactive(&self.publisher);
-        self.machine_cache.write().await.expire_inactive(&self.publisher);
+        self.session_cache
+            .write()
+            .await
+            .expire_inactive(&self.publisher);
+        self.machine_cache
+            .write()
+            .await
+            .expire_inactive(&self.publisher);
     }
 
     // --- RPC delegations ---
@@ -292,7 +423,9 @@ impl SyncEngine {
         decision: Option<&str>,
         answers: Option<hapir_shared::schemas::AnswersFormat>,
     ) -> anyhow::Result<()> {
-        self.rpc_gateway.approve_permission(session_id, request_id, mode, allow_tools, decision, answers).await
+        self.rpc_gateway
+            .approve_permission(session_id, request_id, mode, allow_tools, decision, answers)
+            .await
     }
 
     pub async fn deny_permission(
@@ -301,7 +434,9 @@ impl SyncEngine {
         request_id: &str,
         decision: Option<&str>,
     ) -> anyhow::Result<()> {
-        self.rpc_gateway.deny_permission(session_id, request_id, decision).await
+        self.rpc_gateway
+            .deny_permission(session_id, request_id, decision)
+            .await
     }
 
     pub async fn abort_session(&self, session_id: &str) -> anyhow::Result<()> {
@@ -328,11 +463,19 @@ impl SyncEngine {
     }
 
     pub async fn rename_session(&self, session_id: &str, name: &str) -> anyhow::Result<()> {
-        self.session_cache.write().await.rename_session(session_id, name, &self.store, &self.publisher)
+        self.session_cache.write().await.rename_session(
+            session_id,
+            name,
+            &self.store,
+            &self.publisher,
+        )
     }
 
     pub async fn delete_session(&self, session_id: &str) -> anyhow::Result<()> {
-        self.session_cache.write().await.delete_session(session_id, &self.store, &self.publisher)
+        self.session_cache
+            .write()
+            .await
+            .delete_session(session_id, &self.store, &self.publisher)
     }
 
     /// Apply session config: RPC (no lock) → then update cache
@@ -342,14 +485,26 @@ impl SyncEngine {
         permission_mode: Option<PermissionMode>,
         model_mode: Option<ModelMode>,
     ) -> anyhow::Result<()> {
-        let result = self.rpc_gateway.request_session_config(session_id, permission_mode, model_mode).await?;
-        let applied = result.get("applied")
+        let result = self
+            .rpc_gateway
+            .request_session_config(session_id, permission_mode, model_mode)
+            .await?;
+        let applied = result
+            .get("applied")
             .ok_or_else(|| anyhow::anyhow!("missing applied session config"))?;
-        let pm: Option<PermissionMode> = applied.get("permissionMode")
+        let pm: Option<PermissionMode> = applied
+            .get("permissionMode")
             .and_then(|v| serde_json::from_value(v.clone()).ok());
-        let mm: Option<ModelMode> = applied.get("modelMode")
+        let mm: Option<ModelMode> = applied
+            .get("modelMode")
             .and_then(|v| serde_json::from_value(v.clone()).ok());
-        self.session_cache.write().await.apply_session_config(session_id, pm, mm, &self.store, &self.publisher);
+        self.session_cache.write().await.apply_session_config(
+            session_id,
+            pm,
+            mm,
+            &self.store,
+            &self.publisher,
+        );
         Ok(())
     }
 
@@ -364,47 +519,112 @@ impl SyncEngine {
         worktree_name: Option<&str>,
         resume_session_id: Option<&str>,
     ) -> Result<rpc_gateway::SpawnSessionResult, String> {
-        self.rpc_gateway.spawn_session(machine_id, directory, agent, model, yolo, session_type, worktree_name, resume_session_id).await
+        self.rpc_gateway
+            .spawn_session(
+                machine_id,
+                directory,
+                agent,
+                model,
+                yolo,
+                session_type,
+                worktree_name,
+                resume_session_id,
+            )
+            .await
     }
 
-    pub async fn check_paths_exist(&self, machine_id: &str, paths: &[String]) -> anyhow::Result<std::collections::HashMap<String, bool>> {
+    pub async fn check_paths_exist(
+        &self,
+        machine_id: &str,
+        paths: &[String],
+    ) -> anyhow::Result<std::collections::HashMap<String, bool>> {
         self.rpc_gateway.check_paths_exist(machine_id, paths).await
     }
 
-    pub async fn get_git_status(&self, session_id: &str, cwd: Option<&str>) -> anyhow::Result<rpc_gateway::RpcCommandResponse> {
+    pub async fn get_git_status(
+        &self,
+        session_id: &str,
+        cwd: Option<&str>,
+    ) -> anyhow::Result<rpc_gateway::RpcCommandResponse> {
         self.rpc_gateway.get_git_status(session_id, cwd).await
     }
 
-    pub async fn get_git_diff_numstat(&self, session_id: &str, cwd: Option<&str>, staged: Option<bool>) -> anyhow::Result<rpc_gateway::RpcCommandResponse> {
-        self.rpc_gateway.get_git_diff_numstat(session_id, cwd, staged).await
+    pub async fn get_git_diff_numstat(
+        &self,
+        session_id: &str,
+        cwd: Option<&str>,
+        staged: Option<bool>,
+    ) -> anyhow::Result<rpc_gateway::RpcCommandResponse> {
+        self.rpc_gateway
+            .get_git_diff_numstat(session_id, cwd, staged)
+            .await
     }
 
-    pub async fn get_git_diff_file(&self, session_id: &str, cwd: Option<&str>, file_path: &str, staged: Option<bool>) -> anyhow::Result<rpc_gateway::RpcCommandResponse> {
-        self.rpc_gateway.get_git_diff_file(session_id, cwd, file_path, staged).await
+    pub async fn get_git_diff_file(
+        &self,
+        session_id: &str,
+        cwd: Option<&str>,
+        file_path: &str,
+        staged: Option<bool>,
+    ) -> anyhow::Result<rpc_gateway::RpcCommandResponse> {
+        self.rpc_gateway
+            .get_git_diff_file(session_id, cwd, file_path, staged)
+            .await
     }
 
-    pub async fn read_session_file(&self, session_id: &str, path: &str) -> anyhow::Result<rpc_gateway::RpcReadFileResponse> {
+    pub async fn read_session_file(
+        &self,
+        session_id: &str,
+        path: &str,
+    ) -> anyhow::Result<rpc_gateway::RpcReadFileResponse> {
         self.rpc_gateway.read_session_file(session_id, path).await
     }
 
-    pub async fn list_directory(&self, session_id: &str, path: &str) -> anyhow::Result<rpc_gateway::RpcListDirectoryResponse> {
+    pub async fn list_directory(
+        &self,
+        session_id: &str,
+        path: &str,
+    ) -> anyhow::Result<rpc_gateway::RpcListDirectoryResponse> {
         self.rpc_gateway.list_directory(session_id, path).await
     }
 
-    pub async fn upload_file(&self, session_id: &str, filename: &str, content: &str, mime_type: &str) -> anyhow::Result<rpc_gateway::RpcUploadFileResponse> {
-        self.rpc_gateway.upload_file(session_id, filename, content, mime_type).await
+    pub async fn upload_file(
+        &self,
+        session_id: &str,
+        filename: &str,
+        content: &str,
+        mime_type: &str,
+    ) -> anyhow::Result<rpc_gateway::RpcUploadFileResponse> {
+        self.rpc_gateway
+            .upload_file(session_id, filename, content, mime_type)
+            .await
     }
 
-    pub async fn delete_upload_file(&self, session_id: &str, path: &str) -> anyhow::Result<rpc_gateway::RpcDeleteUploadResponse> {
+    pub async fn delete_upload_file(
+        &self,
+        session_id: &str,
+        path: &str,
+    ) -> anyhow::Result<rpc_gateway::RpcDeleteUploadResponse> {
         self.rpc_gateway.delete_upload_file(session_id, path).await
     }
 
-    pub async fn run_ripgrep(&self, session_id: &str, args: &[String], cwd: Option<&str>) -> anyhow::Result<rpc_gateway::RpcCommandResponse> {
+    pub async fn run_ripgrep(
+        &self,
+        session_id: &str,
+        args: &[String],
+        cwd: Option<&str>,
+    ) -> anyhow::Result<rpc_gateway::RpcCommandResponse> {
         self.rpc_gateway.run_ripgrep(session_id, args, cwd).await
     }
 
-    pub async fn list_slash_commands(&self, session_id: &str, agent: &str) -> anyhow::Result<Value> {
-        self.rpc_gateway.list_slash_commands(session_id, agent).await
+    pub async fn list_slash_commands(
+        &self,
+        session_id: &str,
+        agent: &str,
+    ) -> anyhow::Result<Value> {
+        self.rpc_gateway
+            .list_slash_commands(session_id, agent)
+            .await
     }
 
     pub async fn list_skills(&self, session_id: &str) -> anyhow::Result<Value> {
@@ -417,20 +637,25 @@ impl SyncEngine {
         new_session_id: &str,
         namespace: &str,
     ) -> anyhow::Result<()> {
-        self.session_cache.write().await.merge_sessions(old_session_id, new_session_id, namespace, &self.store, &self.publisher)
+        self.session_cache.write().await.merge_sessions(
+            old_session_id,
+            new_session_id,
+            namespace,
+            &self.store,
+            &self.publisher,
+        )
     }
 
     /// Resume an inactive session by finding a suitable machine and spawning.
     /// Follows lock discipline: read/write lock → release → RPC (no lock) → write lock
-    pub async fn resume_session(
-        &self,
-        session_id: &str,
-        namespace: &str,
-    ) -> ResumeSessionResult {
+    pub async fn resume_session(&self, session_id: &str, namespace: &str) -> ResumeSessionResult {
         // Phase 1: validate session access (write lock for potential refresh)
         let (original_id, session) = {
             let access = self.session_cache.write().await.resolve_session_access(
-                session_id, namespace, &self.store, &self.publisher,
+                session_id,
+                namespace,
+                &self.store,
+                &self.publisher,
             );
             match access {
                 Ok(pair) => pair,
@@ -438,19 +663,21 @@ impl SyncEngine {
                     return ResumeSessionResult::Error {
                         message: "Session access denied".into(),
                         code: ResumeSessionErrorCode::AccessDenied,
-                    }
+                    };
                 }
                 Err(_) => {
                     return ResumeSessionResult::Error {
                         message: "Session not found".into(),
                         code: ResumeSessionErrorCode::SessionNotFound,
-                    }
+                    };
                 }
             }
         };
 
         if session.active {
-            return ResumeSessionResult::Success { session_id: original_id };
+            return ResumeSessionResult::Success {
+                session_id: original_id,
+            };
         }
 
         let metadata = match &session.metadata {
@@ -459,7 +686,7 @@ impl SyncEngine {
                 return ResumeSessionResult::Error {
                     message: "Session metadata missing path".into(),
                     code: ResumeSessionErrorCode::ResumeUnavailable,
-                }
+                };
             }
         };
 
@@ -497,14 +724,15 @@ impl SyncEngine {
                 };
             }
 
-            let found = online_machines.iter().find(|m| {
-                metadata.machine_id.as_deref() == Some(&m.id)
-            }).or_else(|| {
-                let host = metadata.host.as_str();
-                online_machines.iter().find(|m| {
-                    m.metadata.as_ref().is_some_and(|meta| meta.host == host)
-                })
-            });
+            let found = online_machines
+                .iter()
+                .find(|m| metadata.machine_id.as_deref() == Some(&m.id))
+                .or_else(|| {
+                    let host = metadata.host.as_str();
+                    online_machines
+                        .iter()
+                        .find(|m| m.metadata.as_ref().is_some_and(|meta| meta.host == host))
+                });
 
             match found {
                 Some(m) => m.clone(),
@@ -512,52 +740,56 @@ impl SyncEngine {
                     return ResumeSessionResult::Error {
                         message: "No machine online".into(),
                         code: ResumeSessionErrorCode::NoMachineOnline,
-                    }
+                    };
                 }
             }
         };
 
         // Phase 3: RPC spawn (no lock held)
         // If no resume token (session created but agent never started), spawn fresh.
-        let spawn_result = self.rpc_gateway.spawn_session(
-            &target.id,
-            &metadata.path,
-            flavor,
-            None,
-            None,
-            None,
-            None,
-            resume_token.as_deref(),
-        ).await;
+        let spawn_result = self
+            .rpc_gateway
+            .spawn_session(
+                &target.id,
+                &metadata.path,
+                flavor,
+                None,
+                None,
+                None,
+                None,
+                resume_token.as_deref(),
+            )
+            .await;
 
         let spawn_session_id = match spawn_result {
-            Ok(r) if r.result_type == "success" => {
-                match r.session_id {
-                    Some(id) => id,
-                    None => {
-                        return ResumeSessionResult::Error {
-                            message: "Spawn returned success but no session ID".into(),
-                            code: ResumeSessionErrorCode::ResumeFailed,
-                        }
-                    }
+            Ok(r) if r.result_type == "success" => match r.session_id {
+                Some(id) => id,
+                None => {
+                    return ResumeSessionResult::Error {
+                        message: "Spawn returned success but no session ID".into(),
+                        code: ResumeSessionErrorCode::ResumeFailed,
+                    };
                 }
-            }
+            },
             Ok(r) => {
                 return ResumeSessionResult::Error {
                     message: r.message.unwrap_or_else(|| "Spawn failed".into()),
                     code: ResumeSessionErrorCode::ResumeFailed,
-                }
+                };
             }
             Err(e) => {
                 return ResumeSessionResult::Error {
                     message: e,
                     code: ResumeSessionErrorCode::ResumeFailed,
-                }
+                };
             }
         };
 
         // Phase 4: poll for active (short read locks each iteration)
-        if !self.wait_for_session_active(&spawn_session_id, 15_000).await {
+        if !self
+            .wait_for_session_active(&spawn_session_id, 15_000)
+            .await
+        {
             return ResumeSessionResult::Error {
                 message: "Session failed to become active".into(),
                 code: ResumeSessionErrorCode::ResumeFailed,
@@ -572,9 +804,12 @@ impl SyncEngine {
                 "[resumeSession] merging old session into new"
             );
             if let Err(e) = self.session_cache.write().await.merge_sessions(
-                &original_id, &spawn_session_id, namespace, &self.store, &self.publisher,
-            )
-            {
+                &original_id,
+                &spawn_session_id,
+                namespace,
+                &self.store,
+                &self.publisher,
+            ) {
                 return ResumeSessionResult::Error {
                     message: e.to_string(),
                     code: ResumeSessionErrorCode::ResumeFailed,
@@ -582,7 +817,9 @@ impl SyncEngine {
             }
         }
 
-        ResumeSessionResult::Success { session_id: spawn_session_id }
+        ResumeSessionResult::Success {
+            session_id: spawn_session_id,
+        }
     }
 
     /// Poll until a session becomes active, up to timeout_ms.
@@ -607,8 +844,13 @@ impl SyncEngine {
 
 #[derive(Debug, Clone)]
 pub enum ResumeSessionResult {
-    Success { session_id: String },
-    Error { message: String, code: ResumeSessionErrorCode },
+    Success {
+        session_id: String,
+    },
+    Error {
+        message: String,
+        code: ResumeSessionErrorCode,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

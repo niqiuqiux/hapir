@@ -2,8 +2,8 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use hapir_shared::schemas::{Session, SyncEvent, ToastData};
 use crate::sync::SyncEngine;
+use hapir_shared::schemas::{Session, SyncEvent, ToastData};
 
 use super::push_service::{PushData, PushPayload, PushService};
 use super::session_info::{get_agent_name, get_session_name};

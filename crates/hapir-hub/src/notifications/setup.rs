@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use crate::config::settings::VapidKeys;
 use crate::config::Configuration;
+use crate::config::settings::VapidKeys;
 use crate::notifications::notification_hub::NotificationHub;
 use crate::notifications::push_channel::{NotificationChannel, PushNotificationChannel};
 use crate::notifications::push_service::PushService;
@@ -53,11 +53,7 @@ pub fn build(
         None
     };
 
-    let notification_hub = Arc::new(NotificationHub::new(
-        channels,
-        5_000,
-        500,
-    ));
+    let notification_hub = Arc::new(NotificationHub::new(channels, 5_000, 500));
 
     NotificationSetup {
         notification_hub,

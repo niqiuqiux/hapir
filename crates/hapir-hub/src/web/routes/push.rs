@@ -1,15 +1,15 @@
 use axum::{
+    Json, Router,
     extract::{Extension, State},
     http::StatusCode,
     routing::{delete, get, post},
-    Json, Router,
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::store::push_subscriptions::{self, PushSubscriptionInput};
-use crate::web::middleware::auth::AuthContext;
 use crate::web::AppState;
+use crate::web::middleware::auth::AuthContext;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -18,9 +18,7 @@ pub fn router() -> Router<AppState> {
         .route("/push/subscribe", delete(unsubscribe))
 }
 
-async fn vapid_public_key(
-    State(state): State<AppState>,
-) -> (StatusCode, Json<Value>) {
+async fn vapid_public_key(State(state): State<AppState>) -> (StatusCode, Json<Value>) {
     match &state.vapid_public_key {
         Some(key) => (StatusCode::OK, Json(json!({"publicKey": key}))),
         None => (

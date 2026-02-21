@@ -1,16 +1,16 @@
 use std::collections::HashSet;
 
 use axum::{
-    extract::{Extension, Path, State}, http::StatusCode,
+    Json, Router,
+    extract::{Extension, Path, State},
+    http::StatusCode,
     routing::{get, post},
-    Json,
-    Router,
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use crate::web::middleware::auth::AuthContext;
 use crate::web::AppState;
+use crate::web::middleware::auth::AuthContext;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -23,7 +23,10 @@ async fn list_machines(
     State(state): State<AppState>,
     Extension(auth): Extension<AuthContext>,
 ) -> (StatusCode, Json<Value>) {
-    let machines = state.sync_engine.get_online_machines_by_namespace(&auth.namespace).await;
+    let machines = state
+        .sync_engine
+        .get_online_machines_by_namespace(&auth.namespace)
+        .await;
     (StatusCode::OK, Json(json!({ "machines": machines })))
 }
 
@@ -90,7 +93,8 @@ async fn spawn_machine(
         );
     }
 
-    let result = state.sync_engine
+    let result = state
+        .sync_engine
         .spawn_session(
             &machine_id,
             &body.directory,
@@ -119,7 +123,10 @@ async fn spawn_machine(
             } else {
                 &e
             };
-            (StatusCode::OK, Json(json!({"type": "error", "message": message})))
+            (
+                StatusCode::OK,
+                Json(json!({"type": "error", "message": message})),
+            )
         }
     }
 }
@@ -189,7 +196,11 @@ async fn paths_exists(
         return (StatusCode::OK, Json(json!({ "exists": {} })));
     }
 
-    match state.sync_engine.check_paths_exist(&machine_id, &unique_paths).await {
+    match state
+        .sync_engine
+        .check_paths_exist(&machine_id, &unique_paths)
+        .await
+    {
         Ok(exists) => (StatusCode::OK, Json(json!({ "exists": exists }))),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,

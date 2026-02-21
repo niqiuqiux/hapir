@@ -4,13 +4,13 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use serde_json::Value;
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{Mutex, oneshot};
 use tracing::debug;
 
 use crate::transport::AcpStdioTransport;
 use crate::types::{
-    AgentBackend, AgentSessionConfig, OnPermissionRequestFn, OnUpdateFn,
-    PermissionRequest, PermissionResponse, PromptContent,
+    AgentBackend, AgentSessionConfig, OnPermissionRequestFn, OnUpdateFn, PermissionRequest,
+    PermissionResponse, PromptContent,
 };
 
 use super::message_handler::CodexMessageHandler;
@@ -40,11 +40,7 @@ pub struct CodexAppServerBackend {
 }
 
 impl CodexAppServerBackend {
-    pub fn new(
-        command: String,
-        args: Vec<String>,
-        env: Option<HashMap<String, String>>,
-    ) -> Self {
+    pub fn new(command: String, args: Vec<String>, env: Option<HashMap<String, String>>) -> Self {
         Self {
             command,
             args,
@@ -65,11 +61,7 @@ impl AgentBackend for CodexAppServerBackend {
                 return Ok(());
             }
 
-            let transport = AcpStdioTransport::new(
-                &self.command,
-                &self.args,
-                self.env.clone(),
-            );
+            let transport = AcpStdioTransport::new(&self.command, &self.args, self.env.clone());
 
             let msg_handler = self.message_handler.clone();
             transport
@@ -100,7 +92,8 @@ impl AgentBackend for CodexAppServerBackend {
 
                             let (tx, rx) = oneshot::channel();
                             pending.lock().await.insert(id, PendingPermission { tx });
-                            rx.await.unwrap_or_else(|_| serde_json::json!({"approved": false}))
+                            rx.await
+                                .unwrap_or_else(|_| serde_json::json!({"approved": false}))
                         })
                     }),
                 )
@@ -122,7 +115,8 @@ impl AgentBackend for CodexAppServerBackend {
 
                             let (tx, rx) = oneshot::channel();
                             pending.lock().await.insert(id, PendingPermission { tx });
-                            rx.await.unwrap_or_else(|_| serde_json::json!({"approved": false}))
+                            rx.await
+                                .unwrap_or_else(|_| serde_json::json!({"approved": false}))
                         })
                     }),
                 )
@@ -266,7 +260,10 @@ impl AgentBackend for CodexAppServerBackend {
                 let approved = matches!(response, PermissionResponse::Selected { ref option_id } if option_id != "deny");
                 let _ = p.tx.send(serde_json::json!({"approved": approved}));
             } else {
-                debug!("[CodexAppServer] No pending permission for id {}", request_id);
+                debug!(
+                    "[CodexAppServer] No pending permission for id {}",
+                    request_id
+                );
             }
             Ok(())
         })

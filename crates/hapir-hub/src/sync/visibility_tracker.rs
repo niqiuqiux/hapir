@@ -30,16 +30,28 @@ impl VisibilityTracker {
         }
     }
 
-    pub fn register_connection(&self, subscription_id: &str, namespace: &str, state: VisibilityState) {
+    pub fn register_connection(
+        &self,
+        subscription_id: &str,
+        namespace: &str,
+        state: VisibilityState,
+    ) {
         let mut inner = self.inner.write().unwrap();
         inner.remove_connection(subscription_id);
-        inner.subscription_to_namespace.insert(subscription_id.to_string(), namespace.to_string());
+        inner
+            .subscription_to_namespace
+            .insert(subscription_id.to_string(), namespace.to_string());
         if state == VisibilityState::Visible {
             inner.add_visible(namespace, subscription_id);
         }
     }
 
-    pub fn set_visibility(&self, subscription_id: &str, namespace: &str, state: VisibilityState) -> bool {
+    pub fn set_visibility(
+        &self,
+        subscription_id: &str,
+        namespace: &str,
+        state: VisibilityState,
+    ) -> bool {
         let mut inner = self.inner.write().unwrap();
         let tracked = match inner.subscription_to_namespace.get(subscription_id) {
             Some(ns) if ns == namespace => ns.clone(),
@@ -55,12 +67,16 @@ impl VisibilityTracker {
     }
 
     pub fn remove_connection(&self, subscription_id: &str) {
-        self.inner.write().unwrap().remove_connection(subscription_id);
+        self.inner
+            .write()
+            .unwrap()
+            .remove_connection(subscription_id);
     }
 
     pub fn has_visible_connection(&self, namespace: &str) -> bool {
         let inner = self.inner.read().unwrap();
-        inner.visible_connections
+        inner
+            .visible_connections
             .get(namespace)
             .is_some_and(|s| !s.is_empty())
     }
@@ -71,7 +87,8 @@ impl VisibilityTracker {
             Some(ns) => ns,
             None => return false,
         };
-        inner.visible_connections
+        inner
+            .visible_connections
             .get(namespace.as_str())
             .is_some_and(|s| s.contains(subscription_id))
     }

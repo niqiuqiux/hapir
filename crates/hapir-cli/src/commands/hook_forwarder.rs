@@ -68,9 +68,10 @@ fn parse_args(args: &[String]) -> Result<(u16, String)> {
                 let val = iter
                     .next()
                     .ok_or_else(|| anyhow::anyhow!("--port requires a value"))?;
-                port = Some(val.parse().map_err(|_| {
-                    anyhow::anyhow!("invalid port number: {val}")
-                })?);
+                port = Some(
+                    val.parse()
+                        .map_err(|_| anyhow::anyhow!("invalid port number: {val}"))?,
+                );
             }
             "--token" | "-t" => {
                 token = Some(

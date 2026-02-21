@@ -146,10 +146,7 @@ fn format_tool_arguments_detailed(tool: &str, args: &Value) -> String {
         }
 
         "Bash" => {
-            let cmd = args
-                .get("command")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("");
             format!("Command: {}", truncate(cmd, MAX_TOOL_ARGS_LENGTH))
         }
 
@@ -163,10 +160,7 @@ fn format_tool_arguments_detailed(tool: &str, args: &Value) -> String {
         }
 
         "Grep" | "Glob" => {
-            let pattern = args
-                .get("pattern")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let pattern = args.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
             let mut result = format!("Pattern: {pattern}");
             if let Some(path) = args.get("path").and_then(|v| v.as_str()) {
                 result.push_str(&format!("\nPath: {}", truncate(path, 80)));

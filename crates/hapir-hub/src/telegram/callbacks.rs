@@ -28,15 +28,19 @@ pub async fn handle_callback(
         match action.as_str() {
             APPROVE_ACTION => {
                 let session = get_session_or_answer(
-                    sync_engine, namespace, &session_prefix, api, callback_query_id, true,
+                    sync_engine,
+                    namespace,
+                    &session_prefix,
+                    api,
+                    callback_query_id,
+                    true,
                 )
                 .await?;
                 let Some(session) = session else {
                     return Ok(());
                 };
 
-                let request_id =
-                    find_request_by_prefix(&session, extra.as_deref().unwrap_or(""));
+                let request_id = find_request_by_prefix(&session, extra.as_deref().unwrap_or(""));
                 let Some(request_id) = request_id else {
                     api.answer_callback_query(
                         callback_query_id,
@@ -65,15 +69,19 @@ pub async fn handle_callback(
 
             DENY_ACTION => {
                 let session = get_session_or_answer(
-                    sync_engine, namespace, &session_prefix, api, callback_query_id, true,
+                    sync_engine,
+                    namespace,
+                    &session_prefix,
+                    api,
+                    callback_query_id,
+                    true,
                 )
                 .await?;
                 let Some(session) = session else {
                     return Ok(());
                 };
 
-                let request_id =
-                    find_request_by_prefix(&session, extra.as_deref().unwrap_or(""));
+                let request_id = find_request_by_prefix(&session, extra.as_deref().unwrap_or(""));
                 let Some(request_id) = request_id else {
                     api.answer_callback_query(
                         callback_query_id,
@@ -125,8 +133,7 @@ async fn get_session_or_answer(
     callback_query_id: &str,
     require_active: bool,
 ) -> anyhow::Result<Option<Session>> {
-    let sessions = sync_engine
-        .get_sessions_by_namespace(namespace).await;
+    let sessions = sync_engine.get_sessions_by_namespace(namespace).await;
     let session = find_session_by_prefix(&sessions, session_prefix).cloned();
 
     match session {

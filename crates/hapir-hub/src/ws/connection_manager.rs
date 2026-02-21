@@ -2,12 +2,12 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 
-use serde_json::Value;
-use tokio::sync::{mpsc, oneshot, RwLock};
 use hapir_shared::ws_protocol::WsMessage;
+use serde_json::Value;
+use tokio::sync::{RwLock, mpsc, oneshot};
 
-use crate::sync::rpc_gateway::RpcTransport;
 use super::rpc_registry::RpcRegistry;
+use crate::sync::rpc_gateway::RpcTransport;
 
 /// Distinguishes why an RPC call could not be dispatched.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,20 +97,29 @@ impl ConnectionManager {
         self.connections.write().await.remove(conn_id);
     }
 
-    pub async fn get_connection_tx(&self, conn_id: &str) -> Option<mpsc::UnboundedSender<WsOutMessage>> {
-        self.connections.read().await
+    pub async fn get_connection_tx(
+        &self,
+        conn_id: &str,
+    ) -> Option<mpsc::UnboundedSender<WsOutMessage>> {
+        self.connections
+            .read()
+            .await
             .get(conn_id)
             .map(|c| c.tx.clone())
     }
 
     pub async fn get_connection_namespace(&self, conn_id: &str) -> Option<String> {
-        self.connections.read().await
+        self.connections
+            .read()
+            .await
             .get(conn_id)
             .map(|c| c.namespace.clone())
     }
 
     /// Read-only access to the connections map.
-    pub async fn connections_read(&self) -> tokio::sync::RwLockReadGuard<'_, HashMap<String, WsConnection>> {
+    pub async fn connections_read(
+        &self,
+    ) -> tokio::sync::RwLockReadGuard<'_, HashMap<String, WsConnection>> {
         self.connections.read().await
     }
 
@@ -165,7 +174,9 @@ impl ConnectionManager {
 
     /// Join a connection to a session room.
     pub async fn join_session(&self, conn_id: &str, session_id: &str) {
-        self.session_rooms.write().await
+        self.session_rooms
+            .write()
+            .await
             .entry(session_id.to_string())
             .or_default()
             .push(conn_id.to_string());
@@ -173,7 +184,9 @@ impl ConnectionManager {
 
     /// Join a connection to a machine room.
     pub async fn join_machine(&self, conn_id: &str, machine_id: &str) {
-        self.machine_rooms.write().await
+        self.machine_rooms
+            .write()
+            .await
             .entry(machine_id.to_string())
             .or_default()
             .push(conn_id.to_string());
@@ -186,7 +199,8 @@ impl ConnectionManager {
         let conns = self.connections.read().await;
         for member_id in members {
             if let Some(conn) = conns.get(member_id)
-                && conn.conn_type == WsConnType::Cli && conn.namespace == namespace
+                && conn.conn_type == WsConnType::Cli
+                && conn.namespace == namespace
             {
                 return Some(member_id.clone());
             }
@@ -228,7 +242,11 @@ impl ConnectionManager {
 
     /// Check whether a handler is registered for the given method.
     pub async fn has_rpc_handler(&self, method: &str) -> bool {
-        self.rpc_registry.read().await.get_conn_id_for_method(method).is_some()
+        self.rpc_registry
+            .read()
+            .await
+            .get_conn_id_for_method(method)
+            .is_some()
     }
 
     /// Initiate an RPC call: find the connection for the method, send request, return receiver.
@@ -252,23 +270,34 @@ impl ConnectionManager {
             }
         };
 
-        let tx = self.get_connection_tx(&conn_id).await
+        let tx = self
+            .get_connection_tx(&conn_id)
+            .await
             .ok_or(RpcCallError::SendFailed)?;
 
         let request_id = uuid::Uuid::new_v4().to_string();
         let (resp_tx, resp_rx) = oneshot::channel();
 
-        self.pending_rpcs.write().await.insert(
-            request_id.clone(),
-            PendingRpc { tx: resp_tx },
+        self.pending_rpcs
+            .write()
+            .await
+            .insert(request_id.clone(), PendingRpc { tx: resp_tx });
+
+        let msg = WsMessage::request(
+            &request_id,
+            "rpc-request",
+            serde_json::json!({
+                "method": method,
+                "params": serde_json::to_string(&params).unwrap_or_default()
+            }),
         );
 
-        let msg = WsMessage::request(&request_id, "rpc-request", serde_json::json!({
-            "method": method,
-            "params": serde_json::to_string(&params).unwrap_or_default()
-        }));
-
-        if tx.send(WsOutMessage::Text(serde_json::to_string(&msg).unwrap_or_default())).is_err() {
+        if tx
+            .send(WsOutMessage::Text(
+                serde_json::to_string(&msg).unwrap_or_default(),
+            ))
+            .is_err()
+        {
             self.pending_rpcs.write().await.remove(&request_id);
             return Err(RpcCallError::SendFailed);
         }
@@ -290,30 +319,30 @@ impl RpcTransport for ConnectionManager {
         &self,
         method: &str,
         params: Value,
-    ) -> Pin<Box<dyn Future<Output = Result<oneshot::Receiver<Result<Value, String>>, RpcCallError>> + Send + '_>> {
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<oneshot::Receiver<Result<Value, String>>, RpcCallError>>
+                + Send
+                + '_,
+        >,
+    > {
+        let method = method.to_string();
+        Box::pin(async move { self.rpc_call_internal(&method, params).await })
+    }
+
+    fn has_rpc_handler(&self, method: &str) -> Pin<Box<dyn Future<Output = bool> + Send + '_>> {
         let method = method.to_string();
         Box::pin(async move {
-            self.rpc_call_internal(&method, params).await
+            self.rpc_registry
+                .read()
+                .await
+                .get_conn_id_for_method(&method)
+                .is_some()
         })
     }
 
-    fn has_rpc_handler(
-        &self,
-        method: &str,
-    ) -> Pin<Box<dyn Future<Output = bool> + Send + '_>> {
-        let method = method.to_string();
-        Box::pin(async move {
-            self.rpc_registry.read().await.get_conn_id_for_method(&method).is_some()
-        })
-    }
-
-    fn has_scope_connection(
-        &self,
-        scope: &str,
-    ) -> Pin<Box<dyn Future<Output = bool> + Send + '_>> {
+    fn has_scope_connection(&self, scope: &str) -> Pin<Box<dyn Future<Output = bool> + Send + '_>> {
         let scope = scope.to_string();
-        Box::pin(async move {
-            self.has_scope_connection(&scope).await
-        })
+        Box::pin(async move { self.has_scope_connection(&scope).await })
     }
 }

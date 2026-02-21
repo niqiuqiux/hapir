@@ -167,10 +167,9 @@ async fn main() {
         Some(Commands::Doctor) => hapir_cli::commands::doctor::run(),
         // No subcommand: default to claude with any trailing args
         None => {
-            let claude_args = ClaudeArgs::try_parse_from(
-                std::iter::once("hapir".to_string()).chain(cli.args),
-            )
-            .unwrap_or_else(|e| e.exit());
+            let claude_args =
+                ClaudeArgs::try_parse_from(std::iter::once("hapir".to_string()).chain(cli.args))
+                    .unwrap_or_else(|e| e.exit());
             hapir_cli::run_cli(claude_args).await
         }
     };

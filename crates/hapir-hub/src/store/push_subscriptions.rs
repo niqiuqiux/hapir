@@ -28,11 +28,7 @@ pub struct PushSubscriptionInput<'a> {
     pub auth: &'a str,
 }
 
-pub fn add_push_subscription(
-    conn: &Connection,
-    namespace: &str,
-    sub: &PushSubscriptionInput,
-) {
+pub fn add_push_subscription(conn: &Connection, namespace: &str, sub: &PushSubscriptionInput) {
     let now = now_millis();
     let _ = conn.execute(
         "INSERT INTO push_subscriptions (namespace, endpoint, p256dh, auth, created_at)
@@ -54,9 +50,9 @@ pub fn get_push_subscriptions_by_namespace(
     conn: &Connection,
     namespace: &str,
 ) -> Vec<StoredPushSubscription> {
-    let mut stmt = match conn.prepare(
-        "SELECT * FROM push_subscriptions WHERE namespace = ?1 ORDER BY created_at DESC",
-    ) {
+    let mut stmt = match conn
+        .prepare("SELECT * FROM push_subscriptions WHERE namespace = ?1 ORDER BY created_at DESC")
+    {
         Ok(s) => s,
         Err(_) => return vec![],
     };

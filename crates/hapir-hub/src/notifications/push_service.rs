@@ -1,16 +1,16 @@
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
-use p256::ecdsa::{signature::Signer, Signature, SigningKey};
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use p256::ecdsa::{Signature, SigningKey, signature::Signer};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 use url::Url;
 
 use crate::config::settings::VapidKeys;
-use crate::store::push_subscriptions;
 use crate::store::Store;
+use crate::store::push_subscriptions;
 
 /// Payload for a push notification.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -191,24 +191,21 @@ impl PushService {
             .unwrap()
             .as_secs();
 
-        let header_b64 =
-            URL_SAFE_NO_PAD.encode(br#"{"typ":"JWT","alg":"ES256"}"#);
+        let header_b64 = URL_SAFE_NO_PAD.encode(br#"{"typ":"JWT","alg":"ES256"}"#);
         let claims = serde_json::json!({
             "aud": origin,
             "exp": now + 43200,
             "sub": &self.subject,
         });
-        let claims_b64 =
-            URL_SAFE_NO_PAD.encode(claims.to_string().as_bytes());
+        let claims_b64 = URL_SAFE_NO_PAD.encode(claims.to_string().as_bytes());
         let signing_input = format!("{header_b64}.{claims_b64}");
 
         // Decode VAPID private key and sign
         let key_bytes = URL_SAFE_NO_PAD
             .decode(&self.vapid_keys.private_key)
             .map_err(|e| PushError::JwtError(format!("bad private key: {e}")))?;
-        let signing_key =
-            SigningKey::from_bytes(key_bytes.as_slice().into())
-                .map_err(|e| PushError::JwtError(e.to_string()))?;
+        let signing_key = SigningKey::from_bytes(key_bytes.as_slice().into())
+            .map_err(|e| PushError::JwtError(e.to_string()))?;
         let sig: Signature = signing_key.sign(signing_input.as_bytes());
         let sig_b64 = URL_SAFE_NO_PAD.encode(sig.to_bytes());
 
@@ -218,8 +215,8 @@ impl PushService {
 
 /// Extract the origin (scheme + host) from a URL.
 fn extract_origin(endpoint: &str) -> Result<String, PushError> {
-    let parsed = Url::parse(endpoint)
-        .map_err(|e| PushError::HttpError(format!("bad endpoint URL: {e}")))?;
+    let parsed =
+        Url::parse(endpoint).map_err(|e| PushError::HttpError(format!("bad endpoint URL: {e}")))?;
     let host = parsed
         .host_str()
         .ok_or_else(|| PushError::HttpError("endpoint URL has no host".into()))?;

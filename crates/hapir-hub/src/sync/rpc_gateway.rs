@@ -1,17 +1,17 @@
-use std::collections::HashMap;
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::Arc;
-use std::time::Duration;
+use crate::ws::connection_manager::RpcCallError;
 use anyhow::bail;
 use hapir_shared::modes::{ModelMode, PermissionMode};
 use hapir_shared::schemas::{AnswersFormat, AttachmentMetadata};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::oneshot;
 use tokio::time::Instant;
 use tracing::{debug, warn};
-use crate::ws::connection_manager::RpcCallError;
 
 /// Trait for the RPC transport layer. The WebSocket server implements this.
 pub trait RpcTransport: Send + Sync {
@@ -20,21 +20,21 @@ pub trait RpcTransport: Send + Sync {
         &self,
         method: &str,
         params: Value,
-    ) -> Pin<Box<dyn Future<Output = Result<oneshot::Receiver<Result<Value, String>>, RpcCallError>> + Send + '_>>;
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<oneshot::Receiver<Result<Value, String>>, RpcCallError>>
+                + Send
+                + '_,
+        >,
+    >;
 
     /// Check whether a handler is registered for the given method.
-    fn has_rpc_handler(
-        &self,
-        method: &str,
-    ) -> Pin<Box<dyn Future<Output = bool> + Send + '_>>;
+    fn has_rpc_handler(&self, method: &str) -> Pin<Box<dyn Future<Output = bool> + Send + '_>>;
 
     /// Check whether any WebSocket connection exists for the given scope
     /// (session or machine room). Used to fast-fail RPC calls when no CLI
     /// is connected — polling is pointless if no connection can register a handler.
-    fn has_scope_connection(
-        &self,
-        scope: &str,
-    ) -> Pin<Box<dyn Future<Output = bool> + Send + '_>>;
+    fn has_scope_connection(&self, scope: &str) -> Pin<Box<dyn Future<Output = bool> + Send + '_>>;
 }
 
 // --- Response types ---
@@ -118,12 +118,24 @@ impl RpcGateway {
         Self { transport }
     }
 
-    async fn session_rpc(&self, session_id: &str, method: &str, params: Value) -> anyhow::Result<Value> {
-        self.rpc_call(&format!("{session_id}:{method}"), params).await
+    async fn session_rpc(
+        &self,
+        session_id: &str,
+        method: &str,
+        params: Value,
+    ) -> anyhow::Result<Value> {
+        self.rpc_call(&format!("{session_id}:{method}"), params)
+            .await
     }
 
-    async fn machine_rpc(&self, machine_id: &str, method: &str, params: Value) -> anyhow::Result<Value> {
-        self.rpc_call(&format!("{machine_id}:{method}"), params).await
+    async fn machine_rpc(
+        &self,
+        machine_id: &str,
+        method: &str,
+        params: Value,
+    ) -> anyhow::Result<Value> {
+        self.rpc_call(&format!("{machine_id}:{method}"), params)
+            .await
     }
 
     async fn rpc_call(&self, method: &str, params: Value) -> anyhow::Result<Value> {
@@ -154,7 +166,10 @@ impl RpcGateway {
                         // so polling would just waste heap memory.
                         if let Some((scope, _)) = method.split_once(':') {
                             if !self.transport.has_scope_connection(scope).await {
-                                debug!(method, scope, "no active connection for scope, skipping poll");
+                                debug!(
+                                    method,
+                                    scope, "no active connection for scope, skipping poll"
+                                );
                                 bail!("RPC handler not registered (no connection): {method}");
                             }
                         }
@@ -186,14 +201,19 @@ impl RpcGateway {
         decision: Option<&str>,
         answers: Option<AnswersFormat>,
     ) -> anyhow::Result<()> {
-        self.session_rpc(session_id, "permission", serde_json::json!({
-            "id": request_id,
-            "approved": true,
-            "mode": mode,
-            "allowTools": allow_tools,
-            "decision": decision,
-            "answers": answers,
-        })).await?;
+        self.session_rpc(
+            session_id,
+            "permission",
+            serde_json::json!({
+                "id": request_id,
+                "approved": true,
+                "mode": mode,
+                "allowTools": allow_tools,
+                "decision": decision,
+                "answers": answers,
+            }),
+        )
+        .await?;
         Ok(())
     }
 
@@ -203,25 +223,36 @@ impl RpcGateway {
         request_id: &str,
         decision: Option<&str>,
     ) -> anyhow::Result<()> {
-        self.session_rpc(session_id, "permission", serde_json::json!({
-            "id": request_id,
-            "approved": false,
-            "decision": decision,
-        })).await?;
+        self.session_rpc(
+            session_id,
+            "permission",
+            serde_json::json!({
+                "id": request_id,
+                "approved": false,
+                "decision": decision,
+            }),
+        )
+        .await?;
         Ok(())
     }
 
     // --- Session control ---
 
     pub async fn abort_session(&self, session_id: &str) -> anyhow::Result<()> {
-        self.session_rpc(session_id, "abort", serde_json::json!({
-            "reason": "User aborted via Telegram Bot"
-        })).await?;
+        self.session_rpc(
+            session_id,
+            "abort",
+            serde_json::json!({
+                "reason": "User aborted via Telegram Bot"
+            }),
+        )
+        .await?;
         Ok(())
     }
 
     pub async fn switch_session(&self, session_id: &str, to: &str) -> anyhow::Result<()> {
-        self.session_rpc(session_id, "switch", serde_json::json!({"to": to})).await?;
+        self.session_rpc(session_id, "switch", serde_json::json!({"to": to}))
+            .await?;
         Ok(())
     }
 
@@ -231,21 +262,37 @@ impl RpcGateway {
         permission_mode: Option<PermissionMode>,
         model_mode: Option<ModelMode>,
     ) -> anyhow::Result<Value> {
-        self.session_rpc(session_id, "set-session-config", serde_json::json!({
-            "permissionMode": permission_mode,
-            "modelMode": model_mode,
-        })).await
+        self.session_rpc(
+            session_id,
+            "set-session-config",
+            serde_json::json!({
+                "permissionMode": permission_mode,
+                "modelMode": model_mode,
+            }),
+        )
+        .await
     }
 
-    pub async fn send_user_message(&self, session_id: &str, message: &str, attachments: Option<&[AttachmentMetadata]>) -> anyhow::Result<Value> {
-        self.session_rpc(session_id, "on-user-message", serde_json::json!({
-            "message": message,
-            "attachments": attachments,
-        })).await
+    pub async fn send_user_message(
+        &self,
+        session_id: &str,
+        message: &str,
+        attachments: Option<&[AttachmentMetadata]>,
+    ) -> anyhow::Result<Value> {
+        self.session_rpc(
+            session_id,
+            "on-user-message",
+            serde_json::json!({
+                "message": message,
+                "attachments": attachments,
+            }),
+        )
+        .await
     }
 
     pub async fn kill_session(&self, session_id: &str) -> anyhow::Result<()> {
-        self.session_rpc(session_id, "killSession", serde_json::json!({})).await?;
+        self.session_rpc(session_id, "killSession", serde_json::json!({}))
+            .await?;
         Ok(())
     }
 
@@ -262,16 +309,22 @@ impl RpcGateway {
         worktree_name: Option<&str>,
         resume_session_id: Option<&str>,
     ) -> Result<SpawnSessionResult, String> {
-        let result = self.machine_rpc(machine_id, "spawn-happy-session", serde_json::json!({
-            "type": "spawn-in-directory",
-            "directory": directory,
-            "agent": agent,
-            "model": model,
-            "yolo": yolo,
-            "sessionType": session_type,
-            "worktreeName": worktree_name,
-            "resumeSessionId": resume_session_id,
-        })).await;
+        let result = self
+            .machine_rpc(
+                machine_id,
+                "spawn-happy-session",
+                serde_json::json!({
+                    "type": "spawn-in-directory",
+                    "directory": directory,
+                    "agent": agent,
+                    "model": model,
+                    "yolo": yolo,
+                    "sessionType": session_type,
+                    "worktreeName": worktree_name,
+                    "resumeSessionId": resume_session_id,
+                }),
+            )
+            .await;
 
         match result {
             Ok(val) => {
@@ -286,7 +339,9 @@ impl RpcGateway {
                             message: None,
                         });
                     }
-                    let msg = obj.get("error").and_then(|v| v.as_str())
+                    let msg = obj
+                        .get("error")
+                        .and_then(|v| v.as_str())
                         .unwrap_or("Unexpected spawn result");
                     return Ok(SpawnSessionResult {
                         result_type: "error".into(),
@@ -313,63 +368,156 @@ impl RpcGateway {
 
     // --- Git ---
 
-    pub async fn get_git_status(&self, session_id: &str, cwd: Option<&str>) -> anyhow::Result<RpcCommandResponse> {
-        let val = self.session_rpc(session_id, "git-status", serde_json::json!({"cwd": cwd})).await?;
+    pub async fn get_git_status(
+        &self,
+        session_id: &str,
+        cwd: Option<&str>,
+    ) -> anyhow::Result<RpcCommandResponse> {
+        let val = self
+            .session_rpc(session_id, "git-status", serde_json::json!({"cwd": cwd}))
+            .await?;
         Ok(serde_json::from_value(val)?)
     }
 
-    pub async fn get_git_diff_numstat(&self, session_id: &str, cwd: Option<&str>, staged: Option<bool>) -> anyhow::Result<RpcCommandResponse> {
-        let val = self.session_rpc(session_id, "git-diff-numstat", serde_json::json!({"cwd": cwd, "staged": staged})).await?;
+    pub async fn get_git_diff_numstat(
+        &self,
+        session_id: &str,
+        cwd: Option<&str>,
+        staged: Option<bool>,
+    ) -> anyhow::Result<RpcCommandResponse> {
+        let val = self
+            .session_rpc(
+                session_id,
+                "git-diff-numstat",
+                serde_json::json!({"cwd": cwd, "staged": staged}),
+            )
+            .await?;
         Ok(serde_json::from_value(val)?)
     }
 
-    pub async fn get_git_diff_file(&self, session_id: &str, cwd: Option<&str>, file_path: &str, staged: Option<bool>) -> anyhow::Result<RpcCommandResponse> {
-        let val = self.session_rpc(session_id, "git-diff-file", serde_json::json!({"cwd": cwd, "filePath": file_path, "staged": staged})).await?;
+    pub async fn get_git_diff_file(
+        &self,
+        session_id: &str,
+        cwd: Option<&str>,
+        file_path: &str,
+        staged: Option<bool>,
+    ) -> anyhow::Result<RpcCommandResponse> {
+        let val = self
+            .session_rpc(
+                session_id,
+                "git-diff-file",
+                serde_json::json!({"cwd": cwd, "filePath": file_path, "staged": staged}),
+            )
+            .await?;
         Ok(serde_json::from_value(val)?)
     }
 
     // --- File operations ---
 
-    pub async fn read_session_file(&self, session_id: &str, path: &str) -> anyhow::Result<RpcReadFileResponse> {
-        let val = self.session_rpc(session_id, "readFile", serde_json::json!({"path": path})).await?;
+    pub async fn read_session_file(
+        &self,
+        session_id: &str,
+        path: &str,
+    ) -> anyhow::Result<RpcReadFileResponse> {
+        let val = self
+            .session_rpc(session_id, "readFile", serde_json::json!({"path": path}))
+            .await?;
         Ok(serde_json::from_value(val)?)
     }
 
-    pub async fn list_directory(&self, session_id: &str, path: &str) -> anyhow::Result<RpcListDirectoryResponse> {
-        let val = self.session_rpc(session_id, "listDirectory", serde_json::json!({"path": path})).await?;
+    pub async fn list_directory(
+        &self,
+        session_id: &str,
+        path: &str,
+    ) -> anyhow::Result<RpcListDirectoryResponse> {
+        let val = self
+            .session_rpc(
+                session_id,
+                "listDirectory",
+                serde_json::json!({"path": path}),
+            )
+            .await?;
         Ok(serde_json::from_value(val)?)
     }
 
-    pub async fn upload_file(&self, session_id: &str, filename: &str, content: &str, mime_type: &str) -> anyhow::Result<RpcUploadFileResponse> {
+    pub async fn upload_file(
+        &self,
+        session_id: &str,
+        filename: &str,
+        content: &str,
+        mime_type: &str,
+    ) -> anyhow::Result<RpcUploadFileResponse> {
         let val = self.session_rpc(session_id, "uploadFile", serde_json::json!({
             "sessionId": session_id, "filename": filename, "content": content, "mimeType": mime_type
         })).await?;
         Ok(serde_json::from_value(val)?)
     }
 
-    pub async fn delete_upload_file(&self, session_id: &str, path: &str) -> anyhow::Result<RpcDeleteUploadResponse> {
-        let val = self.session_rpc(session_id, "deleteUpload", serde_json::json!({"sessionId": session_id, "path": path})).await?;
+    pub async fn delete_upload_file(
+        &self,
+        session_id: &str,
+        path: &str,
+    ) -> anyhow::Result<RpcDeleteUploadResponse> {
+        let val = self
+            .session_rpc(
+                session_id,
+                "deleteUpload",
+                serde_json::json!({"sessionId": session_id, "path": path}),
+            )
+            .await?;
         Ok(serde_json::from_value(val)?)
     }
 
-    pub async fn run_ripgrep(&self, session_id: &str, args: &[String], cwd: Option<&str>) -> anyhow::Result<RpcCommandResponse> {
-        let val = self.session_rpc(session_id, "ripgrep", serde_json::json!({"args": args, "cwd": cwd})).await?;
+    pub async fn run_ripgrep(
+        &self,
+        session_id: &str,
+        args: &[String],
+        cwd: Option<&str>,
+    ) -> anyhow::Result<RpcCommandResponse> {
+        let val = self
+            .session_rpc(
+                session_id,
+                "ripgrep",
+                serde_json::json!({"args": args, "cwd": cwd}),
+            )
+            .await?;
         Ok(serde_json::from_value(val)?)
     }
 
-    pub async fn check_paths_exist(&self, machine_id: &str, paths: &[String]) -> anyhow::Result<HashMap<String, bool>> {
-        let val = self.machine_rpc(machine_id, "path-exists", serde_json::json!({"paths": paths})).await?;
-        let exists = val.get("exists")
+    pub async fn check_paths_exist(
+        &self,
+        machine_id: &str,
+        paths: &[String],
+    ) -> anyhow::Result<HashMap<String, bool>> {
+        let val = self
+            .machine_rpc(
+                machine_id,
+                "path-exists",
+                serde_json::json!({"paths": paths}),
+            )
+            .await?;
+        let exists = val
+            .get("exists")
             .ok_or_else(|| anyhow::anyhow!("unexpected path-exists result"))?;
         let map: HashMap<String, bool> = serde_json::from_value(exists.clone())?;
         Ok(map)
     }
 
-    pub async fn list_slash_commands(&self, session_id: &str, agent: &str) -> anyhow::Result<Value> {
-        self.session_rpc(session_id, "listSlashCommands", serde_json::json!({"agent": agent})).await
+    pub async fn list_slash_commands(
+        &self,
+        session_id: &str,
+        agent: &str,
+    ) -> anyhow::Result<Value> {
+        self.session_rpc(
+            session_id,
+            "listSlashCommands",
+            serde_json::json!({"agent": agent}),
+        )
+        .await
     }
 
     pub async fn list_skills(&self, session_id: &str) -> anyhow::Result<Value> {
-        self.session_rpc(session_id, "listSkills", serde_json::json!({})).await
+        self.session_rpc(session_id, "listSkills", serde_json::json!({}))
+            .await
     }
 }

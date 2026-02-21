@@ -1,0 +1,20 @@
+[package]
+name = "hapir-runner"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+hapir-shared = { workspace = true }
+hapir-infra = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+axum = "0.8"
+reqwest = { version = "0.13.2", default-features = false, features = ["json", "rustls"] }
+uuid = { version = "1", features = ["v4"] }
+rand = "0.8"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

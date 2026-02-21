@@ -1,11 +1,11 @@
+use axum::http::HeaderValue;
 use axum::{
+    Json,
     extract::{Request, State},
     http::StatusCode,
     middleware::Next,
     response::{IntoResponse, Response},
-    Json,
 };
-use axum::http::HeaderValue;
 use serde_json::json;
 use subtle::ConstantTimeEq;
 
@@ -48,28 +48,44 @@ pub async fn cli_auth(
     let auth_header = match auth_header {
         Some(h) => h,
         None => {
-            return Err((StatusCode::UNAUTHORIZED, Json(json!({"error": "Missing Authorization header"}))).into_response());
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "Missing Authorization header"})),
+            )
+                .into_response());
         }
     };
 
     let token = match auth_header.strip_prefix("Bearer ") {
         Some(t) => t,
         None => {
-            return Err((StatusCode::UNAUTHORIZED, Json(json!({"error": "Invalid Authorization header"}))).into_response());
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "Invalid Authorization header"})),
+            )
+                .into_response());
         }
     };
 
     let (base_token, namespace) = match parse_access_token(token) {
         Some(pair) => pair,
         None => {
-            return Err((StatusCode::UNAUTHORIZED, Json(json!({"error": "Invalid token"}))).into_response());
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "Invalid token"})),
+            )
+                .into_response());
         }
     };
 
     let expected = state.cli_api_token.as_bytes();
     let provided = base_token.as_bytes();
     if expected.len() != provided.len() || expected.ct_eq(provided).unwrap_u8() != 1 {
-        return Err((StatusCode::UNAUTHORIZED, Json(json!({"error": "Invalid token"}))).into_response());
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error": "Invalid token"})),
+        )
+            .into_response());
     }
 
     req.extensions_mut().insert(CliAuthContext { namespace });

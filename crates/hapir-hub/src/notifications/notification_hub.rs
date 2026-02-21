@@ -101,8 +101,7 @@ impl NotificationHub {
             } => {
                 let event_type = extract_message_event_type(&message.content);
                 if event_type.as_deref() == Some("ready") {
-                    self.send_ready_notification(session_id, sync_engine)
-                        .await;
+                    self.send_ready_notification(session_id, sync_engine).await;
                 }
             }
 
@@ -143,7 +142,9 @@ impl NotificationHub {
                 .cloned()
                 .unwrap_or_default();
 
-            let has_new = new_request_ids.iter().any(|id| !old_request_ids.contains(id));
+            let has_new = new_request_ids
+                .iter()
+                .any(|id| !old_request_ids.contains(id));
 
             state
                 .last_known_requests
@@ -205,11 +206,7 @@ impl NotificationHub {
         }
     }
 
-    async fn send_ready_notification(
-        &self,
-        session_id: &str,
-        sync_engine: &Arc<SyncEngine>,
-    ) {
+    async fn send_ready_notification(&self, session_id: &str, sync_engine: &Arc<SyncEngine>) {
         let session = sync_engine.get_session(session_id).await;
 
         let Some(session) = session else {

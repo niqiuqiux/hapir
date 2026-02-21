@@ -1,8 +1,8 @@
 use anyhow::Result;
-use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 use serde::{Deserialize, Serialize};
-use std::fs::{set_permissions, Permissions};
+use std::fs::{Permissions, set_permissions};
 use std::path::Path;
 
 #[derive(Serialize, Deserialize)]

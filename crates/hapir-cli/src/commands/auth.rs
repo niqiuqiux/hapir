@@ -1,7 +1,7 @@
 use std::io::{self, BufRead, Write};
 
-use crate::config::Configuration;
-use crate::persistence;
+use hapir_infra::config::Configuration;
+use hapir_infra::persistence;
 
 pub fn run(action: Option<&str>) -> anyhow::Result<()> {
     let config = Configuration::create()?;
@@ -35,7 +35,10 @@ fn show_status(config: &Configuration) -> anyhow::Result<()> {
 
     println!("\nDirect Connect Status\n");
     println!("  HAPIR_API_URL: {}", config.api_url);
-    println!("  CLI_API_TOKEN: {}", if has_token { "set" } else { "missing" });
+    println!(
+        "  CLI_API_TOKEN: {}",
+        if has_token { "set" } else { "missing" }
+    );
     println!("  Token Source: {token_source}");
     println!(
         "  Machine ID: {}",
@@ -67,7 +70,10 @@ fn login(config: &Configuration) -> anyhow::Result<()> {
     io::stdout().flush()?;
 
     let stdin = io::stdin();
-    let token = stdin.lock().lines().next()
+    let token = stdin
+        .lock()
+        .lines()
+        .next()
         .ok_or_else(|| anyhow::anyhow!("no input"))??;
     let token = token.trim().to_string();
 

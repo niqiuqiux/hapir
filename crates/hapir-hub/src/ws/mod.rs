@@ -3,30 +3,30 @@ pub mod handlers;
 pub mod rpc_registry;
 pub mod terminal_registry;
 
-use std::sync::Arc;
-use std::time::SystemTime;
-use axum::http::StatusCode;
-use axum::{
-    extract::{
-        ws::{Message, WebSocket}, Query, State,
-        WebSocketUpgrade,
-    },
-    response::IntoResponse,
-    Router,
-};
-use futures::{SinkExt, StreamExt};
-use serde::Deserialize;
-use serde_json::Value;
-use tokio::sync::mpsc::unbounded_channel;
-use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
-use uuid::Uuid;
-use hapir_shared::ws_protocol::WsMessage;
 use crate::config::cli_api_token;
 use crate::store::Store;
 use crate::sync::SyncEngine;
+use axum::http::StatusCode;
+use axum::{
+    Router,
+    extract::{
+        Query, State, WebSocketUpgrade,
+        ws::{Message, WebSocket},
+    },
+    response::IntoResponse,
+};
 use connection_manager::{ConnectionManager, WsConnType, WsConnection, WsOutMessage};
+use futures::{SinkExt, StreamExt};
+use hapir_shared::ws_protocol::WsMessage;
+use serde::Deserialize;
+use serde_json::Value;
+use std::sync::Arc;
+use std::time::SystemTime;
 use terminal_registry::TerminalRegistry;
+use tokio::sync::RwLock;
+use tokio::sync::mpsc::unbounded_channel;
+use tracing::{debug, info, warn};
+use uuid::Uuid;
 
 const DEFAULT_MAX_TERMINALS: usize = 4;
 const DEFAULT_IDLE_TIMEOUT_MS: u64 = 15 * 60_000;
@@ -129,7 +129,7 @@ struct JwtClaims {
 }
 
 fn verify_jwt(token: &str, secret: &[u8]) -> Option<JwtClaims> {
-    use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
+    use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 
     #[derive(serde::Deserialize)]
     #[allow(dead_code)]
@@ -280,7 +280,10 @@ async fn handle_cli_ws(
         // Send ack if this was a request
         if let Some(rid) = request_id {
             let ack = WsMessage::ack(rid, &event, response.unwrap_or(Value::Null));
-            state.conn_mgr.send_to(&conn_id, &serde_json::to_string(&ack).unwrap_or_default()).await;
+            state
+                .conn_mgr
+                .send_to(&conn_id, &serde_json::to_string(&ack).unwrap_or_default())
+                .await;
         }
     }
 
@@ -384,7 +387,10 @@ async fn handle_terminal_ws(socket: WebSocket, state: WsState, namespace: String
 
         if let Some(rid) = request_id {
             let ack = WsMessage::ack(rid, &event, response.unwrap_or(Value::Null));
-            state.conn_mgr.send_to(&conn_id, &serde_json::to_string(&ack).unwrap_or_default()).await;
+            state
+                .conn_mgr
+                .send_to(&conn_id, &serde_json::to_string(&ack).unwrap_or_default())
+                .await;
         }
     }
 

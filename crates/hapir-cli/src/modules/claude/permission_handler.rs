@@ -68,9 +68,9 @@ impl PermissionHandler {
             return true;
         }
         // Always abort exit_plan_mode
-        self.tool_calls
-            .iter()
-            .any(|tc| tc.id == tool_call_id && (tc.name == "exit_plan_mode" || tc.name == "ExitPlanMode"))
+        self.tool_calls.iter().any(|tc| {
+            tc.id == tool_call_id && (tc.name == "exit_plan_mode" || tc.name == "ExitPlanMode")
+        })
     }
 
     pub fn get_responses(&self) -> &HashMap<String, PermissionResponseEntry> {

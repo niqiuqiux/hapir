@@ -1,11 +1,11 @@
 use axum::{
+    Json,
     extract::{Request, State},
     http::StatusCode,
     middleware::Next,
     response::{IntoResponse, Response},
-    Json,
 };
-use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -50,7 +50,11 @@ pub async fn jwt_auth(
     let token = match token {
         Some(t) => t,
         None => {
-            return Err((StatusCode::UNAUTHORIZED, Json(json!({"error": "Missing authorization token"}))).into_response());
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "Missing authorization token"})),
+            )
+                .into_response());
         }
     };
 
@@ -60,7 +64,11 @@ pub async fn jwt_auth(
     let data = match decode::<JwtClaims>(&token, &key, &validation) {
         Ok(d) => d,
         Err(_) => {
-            return Err((StatusCode::UNAUTHORIZED, Json(json!({"error": "Invalid token"}))).into_response());
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "Invalid token"})),
+            )
+                .into_response());
         }
     };
 

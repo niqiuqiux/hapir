@@ -64,9 +64,7 @@ pub fn get_or_create_machine(
 
     let now = now_millis();
     let metadata_json = serde_json::to_string(metadata)?;
-    let runner_state_json = runner_state
-        .map(serde_json::to_string)
-        .transpose()?;
+    let runner_state_json = runner_state.map(serde_json::to_string).transpose()?;
 
     conn.execute(
         "INSERT INTO machines (
@@ -166,9 +164,9 @@ pub fn get_machines(conn: &Connection) -> Vec<StoredMachine> {
 }
 
 pub fn get_machines_by_namespace(conn: &Connection, namespace: &str) -> Vec<StoredMachine> {
-    let mut stmt = match conn.prepare(
-        "SELECT * FROM machines WHERE namespace = ?1 ORDER BY updated_at DESC",
-    ) {
+    let mut stmt = match conn
+        .prepare("SELECT * FROM machines WHERE namespace = ?1 ORDER BY updated_at DESC")
+    {
         Ok(s) => s,
         Err(_) => return vec![],
     };

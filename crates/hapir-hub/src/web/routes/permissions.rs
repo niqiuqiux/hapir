@@ -1,17 +1,17 @@
 use axum::{
+    Extension, Json, Router,
     extract::{Path, State},
     http::StatusCode,
     routing::post,
-    Extension, Json, Router,
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use hapir_shared::modes::{is_permission_mode_allowed_for_flavor, AgentFlavor, PermissionMode};
+use hapir_shared::modes::{AgentFlavor, PermissionMode, is_permission_mode_allowed_for_flavor};
 use hapir_shared::schemas::{AnswersFormat, PermissionDecision};
 
-use crate::web::middleware::auth::AuthContext;
 use crate::web::AppState;
+use crate::web::middleware::auth::AuthContext;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -53,24 +53,28 @@ async fn approve_permission(
             return (
                 StatusCode::BAD_REQUEST,
                 Json(json!({ "error": "Invalid body" })),
-            )
+            );
         }
     };
 
     // Verify session access and require active
-    let (session_id, session) = match state.sync_engine.resolve_session_access(&id, &auth.namespace).await {
+    let (session_id, session) = match state
+        .sync_engine
+        .resolve_session_access(&id, &auth.namespace)
+        .await
+    {
         Ok(pair) => pair,
         Err("access-denied") => {
             return (
                 StatusCode::FORBIDDEN,
                 Json(json!({ "error": "Session access denied" })),
-            )
+            );
         }
         Err(_) => {
             return (
                 StatusCode::NOT_FOUND,
                 Json(json!({ "error": "Session not found" })),
-            )
+            );
         }
     };
 
@@ -118,7 +122,8 @@ async fn approve_permission(
         PermissionDecision::Abort => "abort",
     });
 
-    match state.sync_engine
+    match state
+        .sync_engine
         .approve_permission(
             &session_id,
             &request_id,
@@ -151,24 +156,28 @@ async fn deny_permission(
             return (
                 StatusCode::BAD_REQUEST,
                 Json(json!({ "error": "Invalid body" })),
-            )
+            );
         }
     };
 
     // Verify session access and require active
-    let (session_id, session) = match state.sync_engine.resolve_session_access(&id, &auth.namespace).await {
+    let (session_id, session) = match state
+        .sync_engine
+        .resolve_session_access(&id, &auth.namespace)
+        .await
+    {
         Ok(pair) => pair,
         Err("access-denied") => {
             return (
                 StatusCode::FORBIDDEN,
                 Json(json!({ "error": "Session access denied" })),
-            )
+            );
         }
         Err(_) => {
             return (
                 StatusCode::NOT_FOUND,
                 Json(json!({ "error": "Session not found" })),
-            )
+            );
         }
     };
 
@@ -200,7 +209,8 @@ async fn deny_permission(
         PermissionDecision::Abort => "abort",
     });
 
-    match state.sync_engine
+    match state
+        .sync_engine
         .deny_permission(&session_id, &request_id, decision_str)
         .await
     {

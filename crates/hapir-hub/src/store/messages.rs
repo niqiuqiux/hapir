@@ -1,9 +1,9 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use super::types::StoredMessage;
 use rusqlite::Connection;
 use serde_json::Value;
 use uuid::Uuid;
-use super::types::StoredMessage;
 
 fn now_millis() -> i64 {
     SystemTime::now()
@@ -35,9 +35,8 @@ pub fn add_message(
 ) -> anyhow::Result<StoredMessage> {
     // Idempotent: check for existing by local_id
     if let Some(lid) = local_id {
-        let mut stmt = conn.prepare(
-            "SELECT * FROM messages WHERE session_id = ?1 AND local_id = ?2 LIMIT 1",
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT * FROM messages WHERE session_id = ?1 AND local_id = ?2 LIMIT 1")?;
         if let Ok(msg) = stmt.query_row(rusqlite::params![session_id, lid], row_to_message) {
             return Ok(msg);
         }
@@ -78,13 +77,16 @@ pub fn get_messages(
             Ok(s) => s,
             Err(_) => return vec![],
         };
-        stmt.query_map(rusqlite::params![session_id, seq, safe_limit], row_to_message)
-            .map(|rows| rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
-            .unwrap_or_default()
+        stmt.query_map(
+            rusqlite::params![session_id, seq, safe_limit],
+            row_to_message,
+        )
+        .map(|rows| rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
+        .unwrap_or_default()
     } else {
-        let mut stmt = match conn.prepare(
-            "SELECT * FROM messages WHERE session_id = ?1 ORDER BY seq DESC LIMIT ?2",
-        ) {
+        let mut stmt = match conn
+            .prepare("SELECT * FROM messages WHERE session_id = ?1 ORDER BY seq DESC LIMIT ?2")
+        {
             Ok(s) => s,
             Err(_) => return vec![],
         };

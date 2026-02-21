@@ -5,9 +5,9 @@ use hapir_shared::schemas::SyncEvent;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::store::Store;
 use super::alive_time::clamp_alive_time;
 use super::event_publisher::EventPublisher;
+use crate::store::Store;
 
 const MACHINE_TIMEOUT_MS: i64 = 45_000;
 
@@ -111,7 +111,8 @@ impl MachineCache {
         publisher: &EventPublisher,
     ) -> anyhow::Result<Machine> {
         use crate::store::machines;
-        let stored = machines::get_or_create_machine(&store.conn(), id, metadata, runner_state, namespace)?;
+        let stored =
+            machines::get_or_create_machine(&store.conn(), id, metadata, runner_state, namespace)?;
         self.refresh_machine(&stored.id, store, publisher)
             .ok_or_else(|| anyhow::anyhow!("failed to load machine"))
     }
@@ -144,13 +145,37 @@ impl MachineCache {
         let metadata: Option<MachineMetadata> = stored.metadata.as_ref().and_then(|v| {
             let obj = v.as_object()?;
             Some(MachineMetadata {
-                host: obj.get("host").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
-                platform: obj.get("platform").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
-                happy_cli_version: obj.get("happyCliVersion").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
-                display_name: obj.get("displayName").and_then(|v| v.as_str()).map(String::from),
-                home_dir: obj.get("homeDir").and_then(|v| v.as_str()).map(String::from),
-                happy_home_dir: obj.get("happyHomeDir").and_then(|v| v.as_str()).map(String::from),
-                happy_lib_dir: obj.get("happyLibDir").and_then(|v| v.as_str()).map(String::from),
+                host: obj
+                    .get("host")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string(),
+                platform: obj
+                    .get("platform")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string(),
+                happy_cli_version: obj
+                    .get("happyCliVersion")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string(),
+                display_name: obj
+                    .get("displayName")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                home_dir: obj
+                    .get("homeDir")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                happy_home_dir: obj
+                    .get("happyHomeDir")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                happy_lib_dir: obj
+                    .get("happyLibDir")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
             })
         });
 
@@ -164,7 +189,11 @@ impl MachineCache {
             seq: stored.seq as f64,
             created_at: stored.created_at as f64,
             updated_at: stored.updated_at as f64,
-            active: if use_stored { stored.active } else { existing.map(|e| e.active).unwrap_or(stored.active) },
+            active: if use_stored {
+                stored.active
+            } else {
+                existing.map(|e| e.active).unwrap_or(stored.active)
+            },
             active_at: if use_stored {
                 stored_active_at as f64
             } else if existing_active_at > 0 {
@@ -178,7 +207,8 @@ impl MachineCache {
             runner_state_version: stored.runner_state_version as f64,
         };
 
-        self.machines.insert(machine_id.to_string(), machine.clone());
+        self.machines
+            .insert(machine_id.to_string(), machine.clone());
         let ns = machine.namespace.clone();
         let data = serde_json::to_value(&machine).ok();
         publisher.emit(SyncEvent::MachineUpdated {

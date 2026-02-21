@@ -6,20 +6,20 @@ use tracing::{debug, error, warn};
 
 use hapir_shared::schemas::StartedBy as SharedStartedBy;
 
-use hapir_acp::codex_app_server::backend::CodexAppServerBackend;
 use crate::agent::local_launch_policy::{
-    get_local_launch_exit_reason, LocalLaunchContext, LocalLaunchExitReason,
+    LocalLaunchContext, LocalLaunchExitReason, get_local_launch_exit_reason,
 };
-use crate::agent::loop_base::{run_local_remote_session, LoopOptions, LoopResult};
+use crate::agent::loop_base::{LoopOptions, LoopResult, run_local_remote_session};
 use crate::agent::runner_lifecycle::{
-    create_mode_change_handler, set_controlled_by_user, RunnerLifecycle, RunnerLifecycleOptions,
+    RunnerLifecycle, RunnerLifecycleOptions, create_mode_change_handler, set_controlled_by_user,
 };
 use crate::agent::session_base::{AgentSessionBase, AgentSessionBaseOptions, SessionMode};
-use crate::agent::session_factory::{bootstrap_session, SessionBootstrapOptions};
-use crate::config::Configuration;
-use crate::utils::message_queue::MessageQueue2;
-use crate::ws::session_client::WsSessionClient;
+use crate::agent::session_factory::{SessionBootstrapOptions, bootstrap_session};
+use hapir_acp::codex_app_server::backend::CodexAppServerBackend;
 use hapir_acp::types::{AgentBackend, AgentMessage, AgentSessionConfig, PromptContent};
+use hapir_infra::config::Configuration;
+use hapir_infra::utils::message_queue::MessageQueue2;
+use hapir_infra::ws::session_client::WsSessionClient;
 
 #[derive(Debug, Clone, Default)]
 pub struct CodexMode {
@@ -152,7 +152,7 @@ pub async fn run(
 
     if let Some(port) = runner_port {
         let pid = std::process::id();
-        if let Err(e) = crate::runner::control_client::notify_session_started(
+        if let Err(e) = hapir_runner::control_client::notify_session_started(
             port,
             &session_id,
             Some(serde_json::json!({ "hostPid": pid })),
@@ -378,7 +378,10 @@ async fn codex_remote_launcher(
     debug!("[codexRemoteLauncher] Starting in {}", working_directory);
 
     if let Err(e) = backend.initialize().await {
-        warn!("[codexRemoteLauncher] Failed to initialize Codex App Server: {}", e);
+        warn!(
+            "[codexRemoteLauncher] Failed to initialize Codex App Server: {}",
+            e
+        );
         session
             .ws_client
             .send_message(serde_json::json!({
@@ -436,13 +439,12 @@ async fn codex_remote_launcher(
         session.on_thinking_change(true).await;
 
         let ws_for_update = session.ws_client.clone();
-        let on_update: Box<dyn Fn(AgentMessage) + Send + Sync> =
-            Box::new(move |msg| {
-                let ws = ws_for_update.clone();
-                tokio::spawn(async move {
-                    forward_agent_message(&ws, msg).await;
-                });
+        let on_update: Box<dyn Fn(AgentMessage) + Send + Sync> = Box::new(move |msg| {
+            let ws = ws_for_update.clone();
+            tokio::spawn(async move {
+                forward_agent_message(&ws, msg).await;
             });
+        });
 
         let content = vec![PromptContent::Text { text: prompt }];
         if let Err(e) = backend.prompt(&thread_id, content, on_update).await {

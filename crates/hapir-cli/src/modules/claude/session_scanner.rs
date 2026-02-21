@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::debug;
 
-use super::types::{RawJsonLines, INTERNAL_CLAUDE_EVENT_TYPES};
+use super::types::{INTERNAL_CLAUDE_EVENT_TYPES, RawJsonLines};
 
 /// A session scanner that watches `.jsonl` session files, parses lines,
 /// and deduplicates by UUID.
@@ -131,10 +131,9 @@ fn message_key(message: &RawJsonLines) -> String {
     match message {
         RawJsonLines::User { uuid, .. } => uuid.clone(),
         RawJsonLines::Assistant { uuid, .. } => uuid.clone(),
-        RawJsonLines::Summary {
-            leaf_uuid,
-            summary,
-        } => format!("summary: {}: {}", leaf_uuid, summary),
+        RawJsonLines::Summary { leaf_uuid, summary } => {
+            format!("summary: {}: {}", leaf_uuid, summary)
+        }
         RawJsonLines::System { uuid, .. } => uuid.clone(),
     }
 }

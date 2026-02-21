@@ -1,15 +1,15 @@
-use std::sync::Arc;
-use std::time::SystemTime;
-use serde_json::Value;
-use tokio::sync::RwLock;
-use tracing::debug;
-use hapir_shared::schemas::{DecryptedMessage, MessageDeltaData, SyncEvent};
-use hapir_shared::ws_protocol::{WsBroadcast, WsMessage};
+use super::super::connection_manager::ConnectionManager;
+use super::super::terminal_registry::TerminalRegistry;
 use crate::store::Store;
 use crate::sync::SyncEngine;
 use crate::sync::todos::extract_todos_from_message_content;
-use super::super::connection_manager::ConnectionManager;
-use super::super::terminal_registry::TerminalRegistry;
+use hapir_shared::schemas::{DecryptedMessage, MessageDeltaData, SyncEvent};
+use hapir_shared::ws_protocol::{WsBroadcast, WsMessage};
+use serde_json::Value;
+use std::sync::Arc;
+use std::time::SystemTime;
+use tokio::sync::RwLock;
+use tracing::debug;
 
 enum AccessError {
     NamespaceMissing,
@@ -57,10 +57,15 @@ async fn emit_access_error(
         AccessError::NotFound => (format!("{scope} not found"), "not-found"),
         AccessError::NamespaceMissing => ("Namespace missing".to_string(), "namespace-missing"),
     };
-    let msg = WsMessage::event("error", serde_json::json!({
-        "message": message, "code": code, "scope": scope, "id": id
-    }));
-    conn_mgr.send_to(conn_id, &serde_json::to_string(&msg).unwrap_or_default()).await;
+    let msg = WsMessage::event(
+        "error",
+        serde_json::json!({
+            "message": message, "code": code, "scope": scope, "id": id
+        }),
+    );
+    conn_mgr
+        .send_to(conn_id, &serde_json::to_string(&msg).unwrap_or_default())
+        .await;
 }
 
 /// Process an incoming WebSocket event from a CLI connection.
@@ -81,8 +86,12 @@ pub async fn handle_cli_event(
             handle_message_delta(conn_id, namespace, data, sync_engine, store, conn_mgr).await;
             None
         }
-        "update-metadata" => handle_update_metadata(namespace, data, store, sync_engine, conn_id, conn_mgr).await,
-        "update-state" => handle_update_state(namespace, data, store, sync_engine, conn_id, conn_mgr).await,
+        "update-metadata" => {
+            handle_update_metadata(namespace, data, store, sync_engine, conn_id, conn_mgr).await
+        }
+        "update-state" => {
+            handle_update_state(namespace, data, store, sync_engine, conn_id, conn_mgr).await
+        }
         "session-alive" => {
             handle_session_alive(conn_id, namespace, data, store, sync_engine, conn_mgr).await;
             None
@@ -95,8 +104,14 @@ pub async fn handle_cli_event(
             handle_machine_alive(conn_id, namespace, data, store, sync_engine, conn_mgr).await;
             None
         }
-        "machine-update-metadata" => handle_machine_update_metadata(namespace, data, store, sync_engine, conn_id, conn_mgr).await,
-        "machine-update-state" => handle_machine_update_state(namespace, data, store, sync_engine, conn_id, conn_mgr).await,
+        "machine-update-metadata" => {
+            handle_machine_update_metadata(namespace, data, store, sync_engine, conn_id, conn_mgr)
+                .await
+        }
+        "machine-update-state" => {
+            handle_machine_update_state(namespace, data, store, sync_engine, conn_id, conn_mgr)
+                .await
+        }
         "rpc-register" => {
             if let Some(method) = data.get("method").and_then(|v| v.as_str()) {
                 conn_mgr.rpc_register(conn_id, method).await;
@@ -174,41 +189,57 @@ async fn handle_message(
         && let Ok(todos_val) = serde_json::to_value(todos)
     {
         use crate::store::sessions;
-        if sessions::set_session_todos(&store.conn(), sid, Some(&todos_val), msg.created_at, namespace) {
-            sync_engine.handle_realtime_event(SyncEvent::SessionUpdated {
-                session_id: sid.to_string(),
-                namespace: Some(namespace.to_string()),
-                data: Some(serde_json::json!({"sid": sid})),
-            }).await;
+        if sessions::set_session_todos(
+            &store.conn(),
+            sid,
+            Some(&todos_val),
+            msg.created_at,
+            namespace,
+        ) {
+            sync_engine
+                .handle_realtime_event(SyncEvent::SessionUpdated {
+                    session_id: sid.to_string(),
+                    namespace: Some(namespace.to_string()),
+                    data: Some(serde_json::json!({"sid": sid})),
+                })
+                .await;
         }
     }
 
     // Build update and broadcast to session room (excluding sender)
-    let broadcast = WsBroadcast::new(msg.seq, msg.created_at, serde_json::json!({
-        "t": "new-message",
-        "sid": sid,
-        "message": {
-            "id": msg.id,
-            "seq": msg.seq,
-            "createdAt": msg.created_at,
-            "localId": msg.local_id,
-            "content": msg.content,
-        }
-    }));
-    conn_mgr.broadcast_to_session(sid, &broadcast.to_ws_string(), Some(conn_id)).await;
+    let broadcast = WsBroadcast::new(
+        msg.seq,
+        msg.created_at,
+        serde_json::json!({
+            "t": "new-message",
+            "sid": sid,
+            "message": {
+                "id": msg.id,
+                "seq": msg.seq,
+                "createdAt": msg.created_at,
+                "localId": msg.local_id,
+                "content": msg.content,
+            }
+        }),
+    );
+    conn_mgr
+        .broadcast_to_session(sid, &broadcast.to_ws_string(), Some(conn_id))
+        .await;
 
     // Emit to sync engine
-    sync_engine.handle_realtime_event(SyncEvent::MessageReceived {
-        session_id: sid.to_string(),
-        namespace: Some(namespace.to_string()),
-        message: DecryptedMessage {
-            id: msg.id,
-            seq: Some(msg.seq as f64),
-            local_id: msg.local_id,
-            content: msg.content.unwrap_or(Value::Null),
-            created_at: msg.created_at as f64,
-        },
-    }).await;
+    sync_engine
+        .handle_realtime_event(SyncEvent::MessageReceived {
+            session_id: sid.to_string(),
+            namespace: Some(namespace.to_string()),
+            message: DecryptedMessage {
+                id: msg.id,
+                seq: Some(msg.seq as f64),
+                local_id: msg.local_id,
+                content: msg.content.unwrap_or(Value::Null),
+                created_at: msg.created_at as f64,
+            },
+        })
+        .await;
 
     None
 }
@@ -237,23 +268,32 @@ async fn handle_message_delta(
     };
 
     // Broadcast delta to WebSocket clients (excluding sender)
-    let now = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
-    let broadcast = WsBroadcast::new(now, now, serde_json::json!({
-        "t": "message-delta",
-        "sid": sid,
-        "delta": delta,
-    }));
-    conn_mgr.broadcast_to_session(sid, &broadcast.to_ws_string(), Some(conn_id)).await;
+    let now = SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+    let broadcast = WsBroadcast::new(
+        now,
+        now,
+        serde_json::json!({
+            "t": "message-delta",
+            "sid": sid,
+            "delta": delta,
+        }),
+    );
+    conn_mgr
+        .broadcast_to_session(sid, &broadcast.to_ws_string(), Some(conn_id))
+        .await;
 
     // Emit delta via SSE
     if let Ok(delta_data) = serde_json::from_value::<MessageDeltaData>(delta) {
-        sync_engine.handle_realtime_event(
-            SyncEvent::MessageDelta {
+        sync_engine
+            .handle_realtime_event(SyncEvent::MessageDelta {
                 session_id: sid.to_string(),
                 namespace: Some(namespace.to_string()),
                 delta: delta_data,
-            }
-        ).await;
+            })
+            .await;
     }
 }
 
@@ -280,26 +320,40 @@ async fn handle_update_metadata(
 
     let metadata_val = metadata.clone();
     let result = sessions::update_session_metadata(
-        &store.conn(), sid, &metadata_val, expected_version, namespace, true,
+        &store.conn(),
+        sid,
+        &metadata_val,
+        expected_version,
+        namespace,
+        true,
     );
 
     let response = match &result {
         VersionedUpdateResult::Success { version, value } => {
-            let now = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
-            let broadcast = WsBroadcast::new(now, now, serde_json::json!({
-                "t": "update-session",
-                "sid": sid,
-                "metadata": {"version": version, "value": metadata},
-                "agentState": null,
-            }));
-            conn_mgr.broadcast_to_session(sid, &broadcast.to_ws_string(), Some(conn_id)).await;
-            sync_engine.handle_realtime_event(
-                SyncEvent::SessionUpdated {
+            let now = SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as i64;
+            let broadcast = WsBroadcast::new(
+                now,
+                now,
+                serde_json::json!({
+                    "t": "update-session",
+                    "sid": sid,
+                    "metadata": {"version": version, "value": metadata},
+                    "agentState": null,
+                }),
+            );
+            conn_mgr
+                .broadcast_to_session(sid, &broadcast.to_ws_string(), Some(conn_id))
+                .await;
+            sync_engine
+                .handle_realtime_event(SyncEvent::SessionUpdated {
                     session_id: sid.to_string(),
                     namespace: Some(namespace.to_string()),
                     data: Some(serde_json::json!({"sid": sid})),
-                },
-            ).await;
+                })
+                .await;
             serde_json::json!({"result": "success", "version": version, "metadata": value})
         }
         VersionedUpdateResult::VersionMismatch { version, value } => {
@@ -335,26 +389,39 @@ async fn handle_update_state(
     }
 
     let result = sessions::update_session_agent_state(
-        &store.conn(), sid, agent_state, expected_version, namespace,
+        &store.conn(),
+        sid,
+        agent_state,
+        expected_version,
+        namespace,
     );
 
     let response = match &result {
         VersionedUpdateResult::Success { version, value } => {
-            let now = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
-            let broadcast = WsBroadcast::new(now, now, serde_json::json!({
-                "t": "update-session",
-                "sid": sid,
-                "metadata": null,
-                "agentState": {"version": version, "value": agent_state},
-            }));
-            conn_mgr.broadcast_to_session(sid, &broadcast.to_ws_string(), Some(conn_id)).await;
-            sync_engine.handle_realtime_event(
-                SyncEvent::SessionUpdated {
+            let now = SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as i64;
+            let broadcast = WsBroadcast::new(
+                now,
+                now,
+                serde_json::json!({
+                    "t": "update-session",
+                    "sid": sid,
+                    "metadata": null,
+                    "agentState": {"version": version, "value": agent_state},
+                }),
+            );
+            conn_mgr
+                .broadcast_to_session(sid, &broadcast.to_ws_string(), Some(conn_id))
+                .await;
+            sync_engine
+                .handle_realtime_event(SyncEvent::SessionUpdated {
                     session_id: sid.to_string(),
                     namespace: Some(namespace.to_string()),
                     data: Some(serde_json::json!({"sid": sid})),
-                },
-            ).await;
+                })
+                .await;
             serde_json::json!({"result": "success", "version": version, "agentState": value})
         }
         VersionedUpdateResult::VersionMismatch { version, value } => {
@@ -392,12 +459,16 @@ async fn handle_session_alive(
 
     let thinking = data.get("thinking").and_then(|v| v.as_bool());
     let _mode = data.get("mode").and_then(|v| v.as_str()); // accepted for protocol compat
-    let permission_mode = data.get("permissionMode")
+    let permission_mode = data
+        .get("permissionMode")
         .and_then(|v| serde_json::from_value(v.clone()).ok());
-    let model_mode = data.get("modelMode")
+    let model_mode = data
+        .get("modelMode")
         .and_then(|v| serde_json::from_value(v.clone()).ok());
 
-    sync_engine.handle_session_alive(&sid, time, thinking, permission_mode, model_mode).await;
+    sync_engine
+        .handle_session_alive(&sid, time, thinking, permission_mode, model_mode)
+        .await;
 }
 
 async fn handle_session_end(
@@ -471,25 +542,40 @@ async fn handle_machine_update_metadata(
         }}));
     }
 
-    let result = machines::update_machine_metadata(&store.conn(), mid, &metadata.clone(), expected_version, namespace);
+    let result = machines::update_machine_metadata(
+        &store.conn(),
+        mid,
+        &metadata.clone(),
+        expected_version,
+        namespace,
+    );
 
     let response = match &result {
         VersionedUpdateResult::Success { version, value } => {
-            let now = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
-            let broadcast = WsBroadcast::new(now, now, serde_json::json!({
-                "t": "update-machine",
-                "machineId": mid,
-                "metadata": {"version": version, "value": metadata},
-                "runnerState": null,
-            }));
-            conn_mgr.broadcast_to_machine(mid, &broadcast.to_ws_string(), Some(conn_id)).await;
-            sync_engine.handle_realtime_event(
-                SyncEvent::MachineUpdated {
+            let now = SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as i64;
+            let broadcast = WsBroadcast::new(
+                now,
+                now,
+                serde_json::json!({
+                    "t": "update-machine",
+                    "machineId": mid,
+                    "metadata": {"version": version, "value": metadata},
+                    "runnerState": null,
+                }),
+            );
+            conn_mgr
+                .broadcast_to_machine(mid, &broadcast.to_ws_string(), Some(conn_id))
+                .await;
+            sync_engine
+                .handle_realtime_event(SyncEvent::MachineUpdated {
                     machine_id: mid.to_string(),
                     namespace: Some(namespace.to_string()),
                     data: Some(serde_json::json!({"id": mid})),
-                },
-            ).await;
+                })
+                .await;
             serde_json::json!({"result": "success", "version": version, "metadata": value})
         }
         VersionedUpdateResult::VersionMismatch { version, value } => {
@@ -524,25 +610,40 @@ async fn handle_machine_update_state(
         }}));
     }
 
-    let result = machines::update_machine_runner_state(&store.conn(), mid, runner_state, expected_version, namespace);
+    let result = machines::update_machine_runner_state(
+        &store.conn(),
+        mid,
+        runner_state,
+        expected_version,
+        namespace,
+    );
 
     let response = match &result {
         VersionedUpdateResult::Success { version, value } => {
-            let now = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
-            let broadcast = WsBroadcast::new(now, now, serde_json::json!({
-                "t": "update-machine",
-                "machineId": mid,
-                "metadata": null,
-                "runnerState": {"version": version, "value": runner_state},
-            }));
-            conn_mgr.broadcast_to_machine(mid, &broadcast.to_ws_string(), Some(conn_id)).await;
-            sync_engine.handle_realtime_event(
-                SyncEvent::MachineUpdated {
+            let now = SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as i64;
+            let broadcast = WsBroadcast::new(
+                now,
+                now,
+                serde_json::json!({
+                    "t": "update-machine",
+                    "machineId": mid,
+                    "metadata": null,
+                    "runnerState": {"version": version, "value": runner_state},
+                }),
+            );
+            conn_mgr
+                .broadcast_to_machine(mid, &broadcast.to_ws_string(), Some(conn_id))
+                .await;
+            sync_engine
+                .handle_realtime_event(SyncEvent::MachineUpdated {
                     machine_id: mid.to_string(),
                     namespace: Some(namespace.to_string()),
                     data: Some(serde_json::json!({"id": mid})),
-                },
-            ).await;
+                })
+                .await;
             serde_json::json!({"result": "success", "version": version, "runnerState": value})
         }
         VersionedUpdateResult::VersionMismatch { version, value } => {

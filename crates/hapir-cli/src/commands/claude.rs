@@ -1,10 +1,10 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use clap::Parser;
 use tracing::{debug, error};
 
 use crate::commands::common;
-use crate::config::Configuration;
-use crate::modules::claude::run::{run_claude, StartOptions};
+use hapir_infra::config::Configuration;
+use crate::modules::claude::run::{StartOptions, run_claude};
 
 /// Run the default (claude) command.
 ///

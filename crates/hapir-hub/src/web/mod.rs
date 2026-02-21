@@ -3,10 +3,10 @@ pub mod routes;
 pub mod static_files;
 pub mod telegram_init_data;
 
+use axum::Router;
+use axum::http::HeaderValue;
 use std::path::PathBuf;
 use std::sync::Arc;
-use axum::http::HeaderValue;
-use axum::Router;
 use tower_http::cors::CorsLayer;
 
 use hapir_shared::version::PROTOCOL_VERSION;
@@ -35,10 +35,8 @@ pub fn build_router(state: AppState) -> Router {
     let allow_origin = if cors_origins.iter().any(|o| o == "*") {
         AllowOrigin::any()
     } else {
-        let origins: Vec<HeaderValue> = cors_origins
-            .iter()
-            .filter_map(|o| o.parse().ok())
-            .collect();
+        let origins: Vec<HeaderValue> =
+            cors_origins.iter().filter_map(|o| o.parse().ok()).collect();
         AllowOrigin::list(origins)
     };
 
@@ -57,18 +55,24 @@ pub fn build_router(state: AppState) -> Router {
         .allow_origin(allow_origin);
 
     let cli_routes = routes::cli::router()
-        .route_layer(
-            axum::middleware::from_fn_with_state(state.clone(), middleware::cli_auth::cli_auth),
-        )
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            middleware::cli_auth::cli_auth,
+        ))
         .layer(cors.clone());
 
     // Mount API routes under /api without nest, so middleware sees full paths.
     let api_routes = routes::api_router().layer(cors);
 
     Router::new()
-        .route("/health", axum::routing::get(|| async {
-            axum::Json(serde_json::json!({ "status": "ok", "protocolVersion": PROTOCOL_VERSION }))
-        }))
+        .route(
+            "/health",
+            axum::routing::get(|| async {
+                axum::Json(
+                    serde_json::json!({ "status": "ok", "protocolVersion": PROTOCOL_VERSION }),
+                )
+            }),
+        )
         .nest("/cli", cli_routes)
         .nest("/api", api_routes)
         .layer(axum::middleware::from_fn_with_state(

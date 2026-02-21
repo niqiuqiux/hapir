@@ -1,14 +1,14 @@
 use axum::{
+    Json, Router,
     extract::{Extension, Path, Query, State},
     http::StatusCode,
     routing::get,
-    Json, Router,
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use crate::web::middleware::auth::AuthContext;
 use crate::web::AppState;
+use crate::web::middleware::auth::AuthContext;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -80,7 +80,11 @@ async fn git_status(
         Err(e) => return e,
     };
 
-    match state.sync_engine.get_git_status(&session_id, Some(&session_path)).await {
+    match state
+        .sync_engine
+        .get_git_status(&session_id, Some(&session_path))
+        .await
+    {
         Ok(resp) => {
             let val = serde_json::to_value(&resp).unwrap_or_else(|_| json!({"success": false}));
             (StatusCode::OK, Json(val))
@@ -202,7 +206,11 @@ async fn get_file(
         Err(e) => return e,
     };
 
-    match state.sync_engine.read_session_file(&session_id, &query.path).await {
+    match state
+        .sync_engine
+        .read_session_file(&session_id, &query.path)
+        .await
+    {
         Ok(resp) => {
             let val = serde_json::to_value(&resp).unwrap_or_else(|_| json!({"success": false}));
             (StatusCode::OK, Json(val))
@@ -276,7 +284,10 @@ async fn list_files(
                 })
                 .collect();
 
-            (StatusCode::OK, Json(json!({"success": true, "files": files})))
+            (
+                StatusCode::OK,
+                Json(json!({"success": true, "files": files})),
+            )
         }
         Err(e) => rpc_error(e),
     }

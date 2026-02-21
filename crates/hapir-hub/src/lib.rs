@@ -17,9 +17,9 @@ use config::Configuration;
 use store::Store;
 use sync::SyncEngine;
 use web::AppState;
+use ws::WsState;
 use ws::connection_manager::ConnectionManager;
 use ws::terminal_registry::TerminalRegistry;
-use ws::WsState;
 
 pub async fn run_hub() -> anyhow::Result<()> {
     // Load configuration

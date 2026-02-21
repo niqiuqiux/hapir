@@ -4,9 +4,10 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::debug;
 
-use crate::ws::session_client::WsSessionClient;
+use hapir_infra::ws::session_client::WsSessionClient;
 
-type AsyncClosureFn = dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync;
+type AsyncClosureFn =
+    dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync;
 
 /// Options for creating a RunnerLifecycle.
 pub struct RunnerLifecycleOptions {
@@ -140,7 +141,10 @@ impl RunnerLifecycle {
 }
 
 /// Set the `controlledByUser` flag on the agent state based on mode.
-pub async fn set_controlled_by_user(ws_client: &WsSessionClient, mode: super::session_base::SessionMode) {
+pub async fn set_controlled_by_user(
+    ws_client: &WsSessionClient,
+    mode: super::session_base::SessionMode,
+) {
     let controlled = mode == super::session_base::SessionMode::Local;
     let _ = ws_client
         .update_agent_state(move |mut state| {

@@ -1,16 +1,16 @@
 use axum::{
+    Extension, Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
     routing::{get, post},
-    Extension, Json, Router,
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use hapir_shared::schemas::AttachmentMetadata;
 
-use crate::web::middleware::auth::AuthContext;
 use crate::web::AppState;
+use crate::web::middleware::auth::AuthContext;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -40,19 +40,23 @@ async fn list_messages(
     Query(query): Query<MessagesQuery>,
 ) -> (StatusCode, Json<Value>) {
     // Verify session access
-    let session_id = match state.sync_engine.resolve_session_access(&id, &auth.namespace).await {
+    let session_id = match state
+        .sync_engine
+        .resolve_session_access(&id, &auth.namespace)
+        .await
+    {
         Ok((sid, _session)) => sid,
         Err("access-denied") => {
             return (
                 StatusCode::FORBIDDEN,
                 Json(json!({ "error": "Session access denied" })),
-            )
+            );
         }
         Err(_) => {
             return (
                 StatusCode::NOT_FOUND,
                 Json(json!({ "error": "Session not found" })),
-            )
+            );
         }
     };
 
@@ -60,7 +64,9 @@ async fn list_messages(
     let limit = query.limit.unwrap_or(50).clamp(1, 200);
     let before_seq = query.before_seq.filter(|&s| s >= 1);
 
-    let result = state.sync_engine.get_messages_page(&session_id, limit, before_seq);
+    let result = state
+        .sync_engine
+        .get_messages_page(&session_id, limit, before_seq);
 
     (
         StatusCode::OK,
@@ -80,16 +86,13 @@ async fn create_message(
             return (
                 StatusCode::BAD_REQUEST,
                 Json(json!({ "error": "Invalid body" })),
-            )
+            );
         }
     };
 
     // Require text or attachments
     let has_text = !body.text.is_empty();
-    let has_attachments = body
-        .attachments
-        .as_ref()
-        .is_some_and(|a| !a.is_empty());
+    let has_attachments = body.attachments.as_ref().is_some_and(|a| !a.is_empty());
 
     if !has_text && !has_attachments {
         return (
@@ -99,19 +102,23 @@ async fn create_message(
     }
 
     // Verify session access and require active
-    let (session_id, session) = match state.sync_engine.resolve_session_access(&id, &auth.namespace).await {
+    let (session_id, session) = match state
+        .sync_engine
+        .resolve_session_access(&id, &auth.namespace)
+        .await
+    {
         Ok(pair) => pair,
         Err("access-denied") => {
             return (
                 StatusCode::FORBIDDEN,
                 Json(json!({ "error": "Session access denied" })),
-            )
+            );
         }
         Err(_) => {
             return (
                 StatusCode::NOT_FOUND,
                 Json(json!({ "error": "Session not found" })),
-            )
+            );
         }
     };
 
@@ -124,14 +131,18 @@ async fn create_message(
 
     let attachments_slice = body.attachments.as_deref();
 
-    match state.sync_engine.send_message(
-        &session_id,
-        &auth.namespace,
-        &body.text,
-        body.local_id.as_deref(),
-        attachments_slice,
-        Some("webapp"),
-    ).await {
+    match state
+        .sync_engine
+        .send_message(
+            &session_id,
+            &auth.namespace,
+            &body.text,
+            body.local_id.as_deref(),
+            attachments_slice,
+            Some("webapp"),
+        )
+        .await
+    {
         Ok(()) => (StatusCode::OK, Json(json!({ "ok": true }))),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,

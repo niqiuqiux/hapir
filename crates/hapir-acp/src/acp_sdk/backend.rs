@@ -4,12 +4,12 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use serde_json::Value;
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{Mutex, oneshot};
 use tracing::debug;
 
 use crate::types::{
-    AgentBackend, AgentSessionConfig, OnPermissionRequestFn, OnUpdateFn,
-    PermissionOption, PermissionRequest, PermissionResponse, PromptContent,
+    AgentBackend, AgentSessionConfig, OnPermissionRequestFn, OnUpdateFn, PermissionOption,
+    PermissionRequest, PermissionResponse, PromptContent,
 };
 
 use super::message_handler::AcpMessageHandler;
@@ -62,11 +62,7 @@ pub struct AcpSdkBackend {
 }
 
 impl AcpSdkBackend {
-    pub fn new(
-        command: String,
-        args: Vec<String>,
-        env: Option<HashMap<String, String>>,
-    ) -> Self {
+    pub fn new(command: String, args: Vec<String>, env: Option<HashMap<String, String>>) -> Self {
         Self {
             command,
             args,
@@ -235,11 +231,7 @@ impl AgentBackend for AcpSdkBackend {
                 return Ok(());
             }
 
-            let transport = AcpStdioTransport::new(
-                &self.command,
-                &self.args,
-                self.env.clone(),
-            );
+            let transport = AcpStdioTransport::new(&self.command, &self.args, self.env.clone());
 
             let msg_for_notif = self.message_handler.clone();
 
@@ -291,9 +283,9 @@ impl AgentBackend for AcpSdkBackend {
                                 .await
                                 .insert(tool_call_id, PendingPermission { tx });
 
-                            rx.await.unwrap_or_else(|_| {
-                                serde_json::json!({"outcome": {"outcome": "cancelled"}})
-                            })
+                            rx.await.unwrap_or_else(
+                                |_| serde_json::json!({"outcome": {"outcome": "cancelled"}}),
+                            )
                         })
                     }),
                 )
@@ -324,7 +316,10 @@ impl AgentBackend for AcpSdkBackend {
             .map_err(|e| anyhow::anyhow!(e))?;
 
             if !response.is_object()
-                || response.get("protocolVersion").and_then(|v| v.as_u64()).is_none()
+                || response
+                    .get("protocolVersion")
+                    .and_then(|v| v.as_u64())
+                    .is_none()
             {
                 return Err(anyhow::anyhow!(
                     "Invalid initialize response from ACP agent"

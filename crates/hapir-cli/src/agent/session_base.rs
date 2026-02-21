@@ -7,9 +7,9 @@ use tracing::debug;
 
 use hapir_shared::modes::{ModelMode, PermissionMode};
 
-use crate::api::ApiClient;
-use crate::utils::message_queue::MessageQueue2;
-use crate::ws::session_client::WsSessionClient;
+use hapir_infra::api::ApiClient;
+use hapir_infra::utils::message_queue::MessageQueue2;
+use hapir_infra::ws::session_client::WsSessionClient;
 
 /// The local/remote mode of the session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,8 +34,9 @@ pub type SessionFoundCallback = Box<dyn Fn(&str) + Send + Sync>;
 pub type ModeChangeCallback = Box<dyn Fn(SessionMode) + Send + Sync>;
 
 /// Applies a session ID to metadata (flavor-specific).
-pub type ApplySessionIdFn =
-    Box<dyn Fn(hapir_shared::schemas::Metadata, &str) -> hapir_shared::schemas::Metadata + Send + Sync>;
+pub type ApplySessionIdFn = Box<
+    dyn Fn(hapir_shared::schemas::Metadata, &str) -> hapir_shared::schemas::Metadata + Send + Sync,
+>;
 
 /// Options for constructing an AgentSessionBase.
 pub struct AgentSessionBaseOptions<Mode: Clone + Send + 'static> {

@@ -255,7 +255,10 @@ mod tests {
 
     #[test]
     fn flavor_model_modes() {
-        assert_eq!(model_modes_for_flavor(Some(AgentFlavor::Claude)), MODEL_MODES);
+        assert_eq!(
+            model_modes_for_flavor(Some(AgentFlavor::Claude)),
+            MODEL_MODES
+        );
         assert!(model_modes_for_flavor(Some(AgentFlavor::Codex)).is_empty());
     }
 }

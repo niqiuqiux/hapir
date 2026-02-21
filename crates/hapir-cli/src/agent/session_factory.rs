@@ -2,27 +2,17 @@ use std::env::consts::OS;
 use std::path::Path;
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
 use tracing::debug;
 
 use hapir_shared::schemas::{Metadata, Session, StartedBy};
 
-use crate::api::ApiClient;
-use crate::config::Configuration;
-use crate::persistence;
-use crate::ws::session_client::WsSessionClient;
+use hapir_infra::api::ApiClient;
+use hapir_infra::config::Configuration;
+use hapir_infra::machine::{build_machine_metadata, gethostname};
+use hapir_infra::persistence;
+use hapir_infra::ws::session_client::WsSessionClient;
 
-/// Machine-level metadata sent when registering a machine.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MachineMetadata {
-    pub host: String,
-    pub platform: String,
-    pub happy_cli_version: String,
-    pub home_dir: String,
-    pub happy_home_dir: String,
-    pub happy_lib_dir: String,
-}
+pub use hapir_infra::machine::MachineMetadata;
 
 /// Options for bootstrapping a session.
 pub struct SessionBootstrapOptions {
@@ -42,24 +32,6 @@ pub struct SessionBootstrapResult {
     pub machine_id: String,
     pub started_by: StartedBy,
     pub working_directory: String,
-}
-
-/// Build machine-level metadata from the current environment.
-pub fn build_machine_metadata(config: &Configuration) -> MachineMetadata {
-    let hostname = std::env::var("HAPIR_HOSTNAME")
-        .unwrap_or_else(|_| gethostname().to_string_lossy().to_string());
-    let home_dir = dirs_next::home_dir()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_default();
-
-    MachineMetadata {
-        host: hostname,
-        platform: OS.to_string(),
-        happy_cli_version: env!("CARGO_PKG_VERSION").to_string(),
-        home_dir,
-        happy_home_dir: config.home_dir.to_string_lossy().to_string(),
-        happy_lib_dir: config.home_dir.to_string_lossy().to_string(),
-    }
 }
 
 /// Build session metadata for a new session.
@@ -116,12 +88,14 @@ pub fn build_session_metadata(
     }
 }
 
+// PLACEHOLDER_REST
+
 /// Read the machine ID from settings, or bail.
 fn get_machine_id(config: &Configuration) -> anyhow::Result<String> {
     let settings = persistence::read_settings(&config.settings_file)?;
-    settings
-        .machine_id
-        .ok_or_else(|| anyhow::anyhow!("No machine ID found in settings. Run 'hapir auth login' first."))
+    settings.machine_id.ok_or_else(|| {
+        anyhow::anyhow!("No machine ID found in settings. Run 'hapir auth login' first.")
+    })
 }
 
 /// Bootstrap a session: create machine, create session, connect WS client.
@@ -129,9 +103,12 @@ pub async fn bootstrap_session(
     opts: SessionBootstrapOptions,
     config: &Configuration,
 ) -> anyhow::Result<SessionBootstrapResult> {
-    let working_directory = opts
-        .working_directory
-        .unwrap_or_else(|| std::env::current_dir().unwrap().to_string_lossy().to_string());
+    let working_directory = opts.working_directory.unwrap_or_else(|| {
+        std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string()
+    });
     let started_by = opts.started_by.unwrap_or(StartedBy::Terminal);
     let session_tag = opts.tag.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let agent_state = opts.agent_state;
@@ -145,7 +122,13 @@ pub async fn bootstrap_session(
     api.get_or_create_machine(&machine_id, &serde_json::to_value(&machine_meta)?, None)
         .await?;
 
-    let metadata = build_session_metadata(&opts.flavor, started_by, &working_directory, &machine_id, config);
+    let metadata = build_session_metadata(
+        &opts.flavor,
+        started_by,
+        &working_directory,
+        &machine_id,
+        config,
+    );
 
     let session_info = api
         .get_or_create_session(&session_tag, &metadata, agent_state.as_ref())
@@ -166,22 +149,4 @@ pub async fn bootstrap_session(
         started_by,
         working_directory,
     })
-}
-
-fn gethostname() -> std::ffi::OsString {
-    #[cfg(unix)]
-    {
-        let mut buf = vec![0u8; 256];
-        let ret = unsafe { libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf.len()) };
-        if ret == 0 {
-            let len = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
-            std::ffi::OsString::from(String::from_utf8_lossy(&buf[..len]).to_string())
-        } else {
-            std::ffi::OsString::from("unknown")
-        }
-    }
-    #[cfg(not(unix))]
-    {
-        std::ffi::OsString::from("unknown")
-    }
 }

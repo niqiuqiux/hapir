@@ -115,21 +115,13 @@ fn parse_url(args: &[String]) -> Result<String> {
             return Ok(val.to_string());
         }
     }
-    std::env::var("HAPIR_HTTP_MCP_URL")
-        .context("No --url argument and HAPIR_HTTP_MCP_URL not set")
+    std::env::var("HAPIR_HTTP_MCP_URL").context("No --url argument and HAPIR_HTTP_MCP_URL not set")
 }
 
 /// Handle a `tools/call` request by forwarding to the HTTP backend.
-async fn handle_tools_call(
-    client: &reqwest::Client,
-    url: &str,
-    msg: &Value,
-) -> Result<Value> {
+async fn handle_tools_call(client: &reqwest::Client, url: &str, msg: &Value) -> Result<Value> {
     let params = msg.get("params").cloned().unwrap_or(Value::Null);
-    let tool_name = params
-        .get("name")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let tool_name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
     let arguments = params.get("arguments").cloned().unwrap_or(Value::Null);
 
     eprintln!("[hapi-mcp] tools/call: tool={}", tool_name);

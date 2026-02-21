@@ -2,15 +2,13 @@ use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use hapir_shared::modes::{ModelMode, PermissionMode};
-use hapir_shared::schemas::{
-    AgentState, Metadata, Session, SyncEvent, TodoItem,
-};
+use hapir_shared::schemas::{AgentState, Metadata, Session, SyncEvent, TodoItem};
 use serde_json::Value;
 
-use crate::store::Store;
 use super::alive_time::clamp_alive_time;
 use super::event_publisher::EventPublisher;
 use super::todos::extract_todos_from_message_content;
+use crate::store::Store;
 
 const SESSION_TIMEOUT_MS: i64 = 30_000;
 
@@ -96,7 +94,8 @@ impl SessionCache {
         publisher: &EventPublisher,
     ) -> anyhow::Result<Session> {
         use crate::store::sessions;
-        let stored = sessions::get_or_create_session(&store.conn(), tag, metadata, agent_state, namespace)?;
+        let stored =
+            sessions::get_or_create_session(&store.conn(), tag, metadata, agent_state, namespace)?;
         self.refresh_session(&stored.id, store, publisher)
             .ok_or_else(|| anyhow::anyhow!("failed to load session"))
     }
@@ -107,7 +106,7 @@ impl SessionCache {
         store: &Store,
         publisher: &EventPublisher,
     ) -> Option<Session> {
-        use crate::store::{sessions, messages};
+        use crate::store::{messages, sessions};
 
         let mut stored = match sessions::get_session(&store.conn(), session_id) {
             Some(s) => s,
@@ -195,7 +194,8 @@ impl SessionCache {
             model_mode: existing.and_then(|e| e.model_mode),
         };
 
-        self.sessions.insert(session_id.to_string(), session.clone());
+        self.sessions
+            .insert(session_id.to_string(), session.clone());
 
         let event_data = serde_json::to_value(&session).ok();
         if is_update {
@@ -391,35 +391,33 @@ impl SessionCache {
             .get(session_id)
             .ok_or_else(|| anyhow::anyhow!("session not found"))?;
 
-        let current_meta = session.metadata.clone().unwrap_or_else(|| {
-            Metadata {
-                path: String::new(),
-                host: String::new(),
-                version: None,
-                name: None,
-                os: None,
-                summary: None,
-                machine_id: None,
-                claude_session_id: None,
-                codex_session_id: None,
-                gemini_session_id: None,
-                opencode_session_id: None,
-                tools: None,
-                slash_commands: None,
-                home_dir: None,
-                happy_home_dir: None,
-                happy_lib_dir: None,
-                happy_tools_dir: None,
-                started_from_runner: None,
-                host_pid: None,
-                started_by: None,
-                lifecycle_state: None,
-                lifecycle_state_since: None,
-                archived_by: None,
-                archive_reason: None,
-                flavor: None,
-                worktree: None,
-            }
+        let current_meta = session.metadata.clone().unwrap_or_else(|| Metadata {
+            path: String::new(),
+            host: String::new(),
+            version: None,
+            name: None,
+            os: None,
+            summary: None,
+            machine_id: None,
+            claude_session_id: None,
+            codex_session_id: None,
+            gemini_session_id: None,
+            opencode_session_id: None,
+            tools: None,
+            slash_commands: None,
+            home_dir: None,
+            happy_home_dir: None,
+            happy_lib_dir: None,
+            happy_tools_dir: None,
+            started_from_runner: None,
+            host_pid: None,
+            started_by: None,
+            lifecycle_state: None,
+            lifecycle_state_since: None,
+            archived_by: None,
+            archive_reason: None,
+            flavor: None,
+            worktree: None,
         });
 
         let mut new_meta = current_meta;
@@ -498,19 +496,22 @@ impl SessionCache {
         store: &Store,
         publisher: &EventPublisher,
     ) -> anyhow::Result<()> {
-        use crate::store::{sessions, messages};
+        use crate::store::{messages, sessions};
 
         if old_session_id == new_session_id {
             return Ok(());
         }
 
-        let old_stored = sessions::get_session_by_namespace(&store.conn(), old_session_id, namespace)
-            .ok_or_else(|| anyhow::anyhow!("old session not found"))?;
-        let new_stored = sessions::get_session_by_namespace(&store.conn(), new_session_id, namespace)
-            .ok_or_else(|| anyhow::anyhow!("new session not found"))?;
+        let old_stored =
+            sessions::get_session_by_namespace(&store.conn(), old_session_id, namespace)
+                .ok_or_else(|| anyhow::anyhow!("old session not found"))?;
+        let new_stored =
+            sessions::get_session_by_namespace(&store.conn(), new_session_id, namespace)
+                .ok_or_else(|| anyhow::anyhow!("new session not found"))?;
 
         // Merge messages
-        let merge_result = messages::merge_session_messages(&store.conn(), old_session_id, new_session_id)?;
+        let merge_result =
+            messages::merge_session_messages(&store.conn(), old_session_id, new_session_id)?;
         tracing::info!(
             old_session_id = old_session_id,
             new_session_id = new_session_id,
@@ -526,7 +527,9 @@ impl SessionCache {
         {
             // Try up to 2 times for optimistic concurrency
             for _ in 0..2 {
-                if let Some(latest) = sessions::get_session_by_namespace(&store.conn(), new_session_id, namespace) {
+                if let Some(latest) =
+                    sessions::get_session_by_namespace(&store.conn(), new_session_id, namespace)
+                {
                     let result = sessions::update_session_metadata(
                         &store.conn(),
                         new_session_id,

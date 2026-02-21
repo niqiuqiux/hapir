@@ -82,9 +82,11 @@ async fn create_agent(client: &reqwest::Client, api_key: &str) -> Option<String>
         let error_message = error_data
             .get("detail")
             .and_then(|d| {
-                d.as_str()
-                    .map(|s| s.to_string())
-                    .or_else(|| d.get("message").and_then(|m| m.as_str()).map(|s| s.to_string()))
+                d.as_str().map(|s| s.to_string()).or_else(|| {
+                    d.get("message")
+                        .and_then(|m| m.as_str())
+                        .map(|s| s.to_string())
+                })
             })
             .unwrap_or_else(|| format!("API error: {status}"));
         tracing::error!("[Voice] Failed to create agent: {error_message}");

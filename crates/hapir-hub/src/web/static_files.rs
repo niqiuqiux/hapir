@@ -1,4 +1,4 @@
-use axum::http::{header, StatusCode};
+use axum::http::{StatusCode, header};
 use axum::response::{Html, IntoResponse, Response};
 use rust_embed::Embed;
 

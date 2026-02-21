@@ -2,7 +2,7 @@ use std::process::Stdio;
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 use tracing::debug;
 
 use super::types::{PermissionResult, QueryOptions, SdkMessage};
@@ -75,11 +75,7 @@ impl InteractiveQuery {
     }
 
     /// Send a control error response (permission denied) via stdin.
-    pub async fn send_control_error(
-        &self,
-        request_id: &str,
-        error: &str,
-    ) -> anyhow::Result<()> {
+    pub async fn send_control_error(&self, request_id: &str, error: &str) -> anyhow::Result<()> {
         let msg = serde_json::json!({
             "type": "control_response",
             "response": {
@@ -174,7 +170,10 @@ fn build_common_args(options: &QueryOptions) -> Vec<String> {
 
 fn spawn_stdout_reader(
     stdout: tokio::process::ChildStdout,
-) -> (mpsc::UnboundedReceiver<SdkMessage>, tokio::task::JoinHandle<()>) {
+) -> (
+    mpsc::UnboundedReceiver<SdkMessage>,
+    tokio::task::JoinHandle<()>,
+) {
     let (tx, rx) = mpsc::unbounded_channel();
     let handle = tokio::spawn(async move {
         let reader = BufReader::new(stdout);

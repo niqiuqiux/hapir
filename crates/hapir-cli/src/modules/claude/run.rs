@@ -17,13 +17,13 @@ use crate::agent::runner_lifecycle::{
 };
 use crate::agent::session_base::{AgentSessionBase, AgentSessionBaseOptions, SessionMode};
 use crate::agent::session_factory::{SessionBootstrapOptions, bootstrap_session};
-use crate::config::Configuration;
-use crate::handlers;
-use crate::handlers::uploads;
 use crate::modules::claude::hook_server::start_hook_server;
 use crate::modules::claude::session::{ClaudeSession, StartedBy};
-use crate::utils::message_queue::MessageQueue2;
-use crate::ws::session_client::WsSessionClient;
+use hapir_infra::config::Configuration;
+use hapir_infra::handlers;
+use hapir_infra::handlers::uploads;
+use hapir_infra::utils::message_queue::MessageQueue2;
+use hapir_infra::ws::session_client::WsSessionClient;
 
 /// Options for starting a Claude session.
 #[derive(Debug, Clone, Default)]
@@ -151,7 +151,7 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
     // Notify runner that this session has started (resolves the spawn awaiter)
     if let Some(port) = options.runner_port {
         let pid = std::process::id();
-        if let Err(e) = crate::runner::control_client::notify_session_started(
+        if let Err(e) = hapir_runner::control_client::notify_session_started(
             port,
             &session_id,
             Some(serde_json::json!({ "hostPid": pid })),
@@ -395,12 +395,9 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
                                     serde_json::json!(completed_at),
                                 );
 
-                                updated_completed.insert(
-                                    id_clone.clone(),
-                                    serde_json::json!(completed_request),
-                                );
-                                state["completedRequests"] =
-                                    serde_json::json!(updated_completed);
+                                updated_completed
+                                    .insert(id_clone.clone(), serde_json::json!(completed_request));
+                                state["completedRequests"] = serde_json::json!(updated_completed);
                             }
                             state
                         })
@@ -435,7 +432,9 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
                 let pid = cs.active_pid.load(Ordering::Relaxed);
                 if pid != 0 {
                     debug!("[runClaude] Sending SIGTERM to PID {}", pid);
-                    unsafe { libc::kill(pid as i32, libc::SIGTERM); }
+                    unsafe {
+                        libc::kill(pid as i32, libc::SIGTERM);
+                    }
                 }
                 cs.pending_permissions.lock().await.clear();
                 cs.base.on_thinking_change(false).await;
@@ -445,7 +444,8 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
         .await;
 
     // Set up terminal manager
-    let terminal_mgr = crate::terminal::setup_terminal(&ws_client, &session_id, &working_directory).await;
+    let terminal_mgr =
+        crate::terminal::setup_terminal(&ws_client, &session_id, &working_directory).await;
 
     // All RPC handlers registered — now connect the WebSocket.
     // This ensures the hub receives all rpc-register events before session-alive.

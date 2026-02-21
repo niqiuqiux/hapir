@@ -4,7 +4,7 @@ use tokio::sync::Mutex;
 use tracing::{debug, warn};
 
 use crate::agent::local_launch_policy::{
-    get_local_launch_exit_reason, LocalLaunchContext, LocalLaunchExitReason,
+    LocalLaunchContext, LocalLaunchExitReason, get_local_launch_exit_reason,
 };
 use crate::agent::loop_base::LoopResult;
 use crate::modules::claude::session::{ClaudeSession, StartedBy};
@@ -17,9 +17,7 @@ use super::run::EnhancedMode;
 /// Spawns the `claude` CLI process in local/interactive mode,
 /// sets up a session scanner to watch for session IDs, and manages
 /// the local launch lifecycle.
-pub async fn claude_local_launcher(
-    session: &Arc<ClaudeSession<EnhancedMode>>,
-) -> LoopResult {
+pub async fn claude_local_launcher(session: &Arc<ClaudeSession<EnhancedMode>>) -> LoopResult {
     let working_directory = session.base.path.clone();
     debug!("[claudeLocalLauncher] Starting in {}", working_directory);
 
@@ -117,10 +115,7 @@ pub async fn claude_local_launcher(
         starting_mode: Some(session.starting_mode),
     });
 
-    debug!(
-        "[claudeLocalLauncher] Exit reason: {:?}",
-        exit_reason
-    );
+    debug!("[claudeLocalLauncher] Exit reason: {:?}", exit_reason);
 
     match exit_reason {
         LocalLaunchExitReason::Switch => LoopResult::Switch,

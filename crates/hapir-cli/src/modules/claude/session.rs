@@ -80,10 +80,7 @@ impl<Mode: Clone + Send + 'static> ClaudeSession<Mode> {
                 if i + 1 < args.len() {
                     let next = &args[i + 1];
                     if !next.starts_with('-') && next.contains('-') {
-                        debug!(
-                            "[Session] Consumed --resume flag with session ID: {}",
-                            next
-                        );
+                        debug!("[Session] Consumed --resume flag with session ID: {}", next);
                         i += 2;
                         continue;
                     }

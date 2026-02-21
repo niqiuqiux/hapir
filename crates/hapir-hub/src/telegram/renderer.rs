@@ -58,8 +58,7 @@ pub fn find_session_by_prefix<'a>(sessions: &'a [Session], prefix: &str) -> Opti
 
 pub fn build_mini_app_deep_link(base_url: &str, start_param: &str) -> String {
     if let Ok(mut url) = url::Url::parse(base_url) {
-        url.query_pairs_mut()
-            .append_pair("startapp", start_param);
+        url.query_pairs_mut().append_pair("startapp", start_param);
         url.to_string()
     } else {
         let sep = if base_url.contains('?') { "&" } else { "?" };

@@ -1,13 +1,13 @@
-use axum::{extract::State, http::StatusCode, routing::post, Json, Router};
-use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
-use serde_json::{json, Value};
+use axum::{Json, Router, extract::State, http::StatusCode, routing::post};
+use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
+use serde_json::{Value, json};
 
 use crate::config::cli_api_token::{constant_time_eq, parse_access_token};
 use crate::config::owner_id::get_or_create_owner_id;
 use crate::store::users;
-use crate::web::middleware::auth::JwtClaims;
-use crate::web::telegram_init_data::{validate_telegram_init_data, TelegramInitDataValidation};
 use crate::web::AppState;
+use crate::web::middleware::auth::JwtClaims;
+use crate::web::telegram_init_data::{TelegramInitDataValidation, validate_telegram_init_data};
 
 pub fn router() -> Router<AppState> {
     Router::new().route("/auth", post(auth_handler))

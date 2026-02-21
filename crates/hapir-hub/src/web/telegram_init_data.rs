@@ -64,9 +64,7 @@ pub fn validate_telegram_init_data(
 
     let auth_date: u64 = match auth_date_str.parse() {
         Ok(v) => v,
-        Err(_) => {
-            return TelegramInitDataValidation::Err("auth_date is not a valid number".into())
-        }
+        Err(_) => return TelegramInitDataValidation::Err("auth_date is not a valid number".into()),
     };
 
     let now = std::time::SystemTime::now()
@@ -104,8 +102,7 @@ pub fn validate_telegram_init_data(
 
     let mut matched = false;
     for secret_key in &secret_keys {
-        let mut mac =
-            HmacSha256::new_from_slice(secret_key).expect("HMAC accepts any key length");
+        let mut mac = HmacSha256::new_from_slice(secret_key).expect("HMAC accepts any key length");
         mac.update(data_check_string.as_bytes());
         let result = mac.finalize().into_bytes();
 
@@ -128,7 +125,7 @@ pub fn validate_telegram_init_data(
     let user: TelegramUser = match serde_json::from_str(&user_json) {
         Ok(u) => u,
         Err(e) => {
-            return TelegramInitDataValidation::Err(format!("failed to parse user JSON: {e}"))
+            return TelegramInitDataValidation::Err(format!("failed to parse user JSON: {e}"));
         }
     };
 
@@ -146,8 +143,7 @@ pub fn validate_telegram_init_data(
 /// 3. SHA256(bot_token)
 fn derive_secret_keys(bot_token: &str) -> [Vec<u8>; 3] {
     // Key 1: HMAC-SHA256(key="WebAppData", message=bot_token)
-    let mut mac1 =
-        HmacSha256::new_from_slice(b"WebAppData").expect("HMAC accepts any key length");
+    let mut mac1 = HmacSha256::new_from_slice(b"WebAppData").expect("HMAC accepts any key length");
     mac1.update(bot_token.as_bytes());
     let key1 = mac1.finalize().into_bytes().to_vec();
 
@@ -204,7 +200,10 @@ mod tests {
         let pairs = vec![
             ("user".to_string(), user_json.to_string()),
             ("auth_date".to_string(), auth_date.to_string()),
-            ("query_id".to_string(), "AAHdF6IQAAAAAN0XohDhrOrc".to_string()),
+            (
+                "query_id".to_string(),
+                "AAHdF6IQAAAAAN0XohDhrOrc".to_string(),
+            ),
         ];
 
         // Build the data-check string.

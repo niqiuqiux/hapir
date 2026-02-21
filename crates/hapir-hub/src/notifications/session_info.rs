@@ -36,10 +36,7 @@ pub fn get_session_name(session: &Session) -> String {
 
 /// Returns a human-readable agent name based on the session flavor.
 pub fn get_agent_name(session: &Session) -> String {
-    let flavor = session
-        .metadata
-        .as_ref()
-        .and_then(|m| m.flavor.as_deref());
+    let flavor = session.metadata.as_ref().and_then(|m| m.flavor.as_deref());
 
     match flavor {
         Some("claude") => "Claude".to_string(),

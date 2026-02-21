@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{Mutex, mpsc, oneshot};
 use tracing::debug;
 
 /// Classification of errors observed on the child process's stderr.
@@ -36,9 +36,8 @@ pub type StderrErrorHandler = Box<dyn Fn(StderrError) + Send + Sync>;
 
 /// Handler for incoming JSON-RPC requests from the child process.
 /// Receives `(params, request_id)` and returns the result value.
-pub type RequestHandler = Arc<
-    dyn Fn(Value, Value) -> Pin<Box<dyn Future<Output = Value> + Send>> + Send + Sync,
->;
+pub type RequestHandler =
+    Arc<dyn Fn(Value, Value) -> Pin<Box<dyn Future<Output = Value> + Send>> + Send + Sync>;
 
 /// Default request timeout (120 seconds).
 const DEFAULT_TIMEOUT_MS: u64 = 120_000;
@@ -218,12 +217,7 @@ impl AcpStdioTransport {
             timeout_ms
         };
 
-        match tokio::time::timeout(
-            std::time::Duration::from_millis(effective_timeout),
-            rx,
-        )
-        .await
-        {
+        match tokio::time::timeout(std::time::Duration::from_millis(effective_timeout), rx).await {
             Ok(Ok(result)) => result,
             Ok(Err(_)) => Err("channel closed".to_string()),
             Err(_) => {
@@ -236,11 +230,7 @@ impl AcpStdioTransport {
         }
     }
 
-    pub async fn send_request_default(
-        &self,
-        method: &str,
-        params: Value,
-    ) -> Result<Value, String> {
+    pub async fn send_request_default(&self, method: &str, params: Value) -> Result<Value, String> {
         self.send_request(method, params, DEFAULT_TIMEOUT_MS).await
     }
 
@@ -378,7 +368,10 @@ impl AcpStdioTransport {
                 }
             }
             None => {
-                debug!("[transport] Received response with no pending request: {}", id);
+                debug!(
+                    "[transport] Received response with no pending request: {}",
+                    id
+                );
             }
         }
     }

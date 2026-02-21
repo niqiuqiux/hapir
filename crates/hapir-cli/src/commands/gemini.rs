@@ -3,7 +3,7 @@ use clap::Parser;
 use tracing::debug;
 
 use crate::commands::common;
-use crate::config::Configuration;
+use hapir_infra::config::Configuration;
 
 /// Parsed arguments for the gemini command.
 #[derive(Parser, Debug, Default)]
@@ -33,9 +33,7 @@ pub async fn run(args: GeminiArgs) -> Result<()> {
     let mut config = Configuration::create()?;
     let runner_port = common::full_init(&mut config).await?;
 
-    let working_directory = std::env::current_dir()?
-        .to_string_lossy()
-        .to_string();
+    let working_directory = std::env::current_dir()?.to_string_lossy().to_string();
 
     crate::modules::gemini::run(&working_directory, runner_port).await
 }

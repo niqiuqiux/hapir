@@ -19,7 +19,8 @@ impl RpcRegistry {
         if method.is_empty() {
             return;
         }
-        self.method_to_conn.insert(method.to_string(), conn_id.to_string());
+        self.method_to_conn
+            .insert(method.to_string(), conn_id.to_string());
         self.conn_to_methods
             .entry(conn_id.to_string())
             .or_default()
@@ -70,7 +71,10 @@ mod tests {
     fn register_and_lookup() {
         let mut reg = RpcRegistry::new();
         reg.register("conn1", "session1:permission");
-        assert_eq!(reg.get_conn_id_for_method("session1:permission"), Some("conn1"));
+        assert_eq!(
+            reg.get_conn_id_for_method("session1:permission"),
+            Some("conn1")
+        );
     }
 
     #[test]

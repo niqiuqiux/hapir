@@ -10,8 +10,8 @@ pub mod push;
 pub mod sessions;
 pub mod voice;
 
-use axum::Router;
 use crate::web::AppState;
+use axum::Router;
 
 /// Build the /api router (JWT auth middleware applied externally).
 pub fn api_router() -> Router<AppState> {

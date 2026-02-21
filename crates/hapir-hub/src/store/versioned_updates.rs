@@ -60,7 +60,10 @@ pub fn update_versioned_field(
         );
         let mut select_stmt = conn.prepare(&select_sql)?;
         let result = select_stmt.query_row(
-            &[(":id", &id as &dyn rusqlite::types::ToSql), (":namespace", &namespace)],
+            &[
+                (":id", &id as &dyn rusqlite::types::ToSql),
+                (":namespace", &namespace),
+            ],
             |row| {
                 let raw: Option<String> = row.get(0)?;
                 let version: i64 = row.get(1)?;

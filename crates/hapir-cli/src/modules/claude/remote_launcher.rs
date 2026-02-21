@@ -44,9 +44,7 @@ fn resolve_tool_call_id(
 ///
 /// Spawns the `claude` CLI process in interactive mode (--input-format stream-json),
 /// enabling bidirectional communication for streaming and permission handling.
-pub async fn claude_remote_launcher(
-    session: &Arc<ClaudeSession<EnhancedMode>>,
-) -> LoopResult {
+pub async fn claude_remote_launcher(session: &Arc<ClaudeSession<EnhancedMode>>) -> LoopResult {
     let working_directory = session.base.path.clone();
     debug!("[claudeRemoteLauncher] Starting in {}", working_directory);
 
@@ -123,10 +121,7 @@ pub async fn claude_remote_launcher(
                 }
             }
 
-            info!(
-                "[claudeRemoteLauncher] Spawning: resume_id={:?}",
-                resume_id
-            );
+            info!("[claudeRemoteLauncher] Spawning: resume_id={:?}", resume_id);
             let query_options = QueryOptions {
                 cwd: Some(working_directory.clone()),
                 model: mode.model.clone(),
@@ -153,7 +148,9 @@ pub async fn claude_remote_launcher(
             );
             match query::query_interactive(query_options) {
                 Ok(qh) => {
-                    session.active_pid.store(qh.pid().unwrap_or(0), Ordering::Relaxed);
+                    session
+                        .active_pid
+                        .store(qh.pid().unwrap_or(0), Ordering::Relaxed);
                     query_handle = Some(qh);
                 }
                 Err(e) => {
@@ -280,9 +277,10 @@ pub async fn claude_remote_launcher(
                         }
                     }
 
-                    let is_text_only = message.content.iter().all(|block| {
-                        block.get("type").and_then(|v| v.as_str()) == Some("text")
-                    });
+                    let is_text_only = message
+                        .content
+                        .iter()
+                        .all(|block| block.get("type").and_then(|v| v.as_str()) == Some("text"));
 
                     if is_text_only && !current_text.is_empty() {
                         if streaming_message_id.is_none() {
@@ -416,9 +414,7 @@ pub async fn claude_remote_launcher(
                         accumulated_text.clear();
                     }
 
-                    if is_error
-                        && let Some(ref error_text) = result
-                    {
+                    if is_error && let Some(ref error_text) = result {
                         session
                             .base
                             .ws_client
@@ -451,12 +447,16 @@ pub async fn claude_remote_launcher(
 
                     // Clear completedRequests from agent state so stale entries
                     // don't create phantom tool cards after page refresh.
-                    let _ = session.base.ws_client.update_agent_state(|mut state| {
-                        if let Some(obj) = state.as_object_mut() {
-                            obj.remove("completedRequests");
-                        }
-                        state
-                    }).await;
+                    let _ = session
+                        .base
+                        .ws_client
+                        .update_agent_state(|mut state| {
+                            if let Some(obj) = state.as_object_mut() {
+                                obj.remove("completedRequests");
+                            }
+                            state
+                        })
+                        .await;
 
                     // Turn complete - break to wait for next user message
                     got_result = true;
@@ -472,12 +472,9 @@ pub async fn claude_remote_launcher(
                     // Resolve the tool_use.id from tracked assistant messages.
                     // The frontend matches permissions to tool cards by tool_use.id,
                     // not by the SDK's request_id.
-                    let permission_key = resolve_tool_call_id(
-                        &mut tracked_tool_calls,
-                        &tool_name,
-                        &tool_input,
-                    )
-                    .unwrap_or_else(|| request_id.clone());
+                    let permission_key =
+                        resolve_tool_call_id(&mut tracked_tool_calls, &tool_name, &tool_input)
+                            .unwrap_or_else(|| request_id.clone());
 
                     info!(
                         "[claudeRemoteLauncher] Permission request: sdk_id={}, resolved_key={}, tool={}",
@@ -488,8 +485,13 @@ pub async fn claude_remote_launcher(
                     tool_use_to_request_id.insert(permission_key.clone(), request_id.clone());
 
                     // Create oneshot channel for the response
-                    let (tx, rx) = tokio::sync::oneshot::channel::<(bool, Option<serde_json::Value>)>();
-                    session.pending_permissions.lock().await.insert(permission_key.clone(), tx);
+                    let (tx, rx) =
+                        tokio::sync::oneshot::channel::<(bool, Option<serde_json::Value>)>();
+                    session
+                        .pending_permissions
+                        .lock()
+                        .await
+                        .insert(permission_key.clone(), tx);
 
                     // Update agent state with the permission request (keyed by tool_use.id)
                     let key_for_state = permission_key.clone();
@@ -500,21 +502,28 @@ pub async fn claude_remote_launcher(
                         .unwrap()
                         .as_millis() as f64;
 
-                    let _ = session.base.ws_client.update_agent_state(move |mut state| {
-                        if let Some(obj) = state.as_object_mut() {
-                            let requests = obj
-                                .entry("requests")
-                                .or_insert_with(|| serde_json::json!({}));
-                            if let Some(req_map) = requests.as_object_mut() {
-                                req_map.insert(key_for_state, serde_json::json!({
-                                    "tool": tool_name_for_state,
-                                    "arguments": tool_input_for_state,
-                                    "createdAt": requested_at,
-                                }));
+                    let _ = session
+                        .base
+                        .ws_client
+                        .update_agent_state(move |mut state| {
+                            if let Some(obj) = state.as_object_mut() {
+                                let requests = obj
+                                    .entry("requests")
+                                    .or_insert_with(|| serde_json::json!({}));
+                                if let Some(req_map) = requests.as_object_mut() {
+                                    req_map.insert(
+                                        key_for_state,
+                                        serde_json::json!({
+                                            "tool": tool_name_for_state,
+                                            "arguments": tool_input_for_state,
+                                            "createdAt": requested_at,
+                                        }),
+                                    );
+                                }
                             }
-                        }
-                        state
-                    }).await;
+                            state
+                        })
+                        .await;
 
                     // Wait for the permission response from the web UI
                     let sdk_rid = request_id;
@@ -525,28 +534,37 @@ pub async fn claude_remote_launcher(
                                 let input = updated_input
                                     .or(tool_input)
                                     .unwrap_or(serde_json::json!({}));
-                                if let Err(e) = qh_ref.send_control_response(
-                                    &sdk_rid,
-                                    PermissionResult::Allow { updated_input: input },
-                                ).await {
-                                    warn!("[claudeRemoteLauncher] Failed to send permission response: {}", e);
+                                if let Err(e) = qh_ref
+                                    .send_control_response(
+                                        &sdk_rid,
+                                        PermissionResult::Allow {
+                                            updated_input: input,
+                                        },
+                                    )
+                                    .await
+                                {
+                                    warn!(
+                                        "[claudeRemoteLauncher] Failed to send permission response: {}",
+                                        e
+                                    );
                                 }
                             } else {
-                                if let Err(e) = qh_ref.send_control_error(
-                                    &sdk_rid,
-                                    "Permission denied by user",
-                                ).await {
-                                    warn!("[claudeRemoteLauncher] Failed to send permission denial: {}", e);
+                                if let Err(e) = qh_ref
+                                    .send_control_error(&sdk_rid, "Permission denied by user")
+                                    .await
+                                {
+                                    warn!(
+                                        "[claudeRemoteLauncher] Failed to send permission denial: {}",
+                                        e
+                                    );
                                 }
                             }
                         }
                         Err(_) => {
                             // Channel dropped (session closing), deny
                             if let Some(qh_ref) = query_handle.as_ref() {
-                                let _ = qh_ref.send_control_error(
-                                    &sdk_rid,
-                                    "Session closing",
-                                ).await;
+                                let _ =
+                                    qh_ref.send_control_error(&sdk_rid, "Session closing").await;
                             }
                         }
                     }
@@ -558,10 +576,7 @@ pub async fn claude_remote_launcher(
                     );
                 }
                 SdkMessage::ControlCancelRequest { request_id } => {
-                    debug!(
-                        "[claudeRemoteLauncher] Control cancel: id={}",
-                        request_id
-                    );
+                    debug!("[claudeRemoteLauncher] Control cancel: id={}", request_id);
                     // The cancel may come with the SDK's request_id; find the
                     // permission_key (tool_use.id) we mapped it to.
                     let permission_key = tool_use_to_request_id
@@ -570,16 +585,26 @@ pub async fn claude_remote_launcher(
                         .map(|(k, _)| k.clone())
                         .unwrap_or_else(|| request_id.clone());
 
-                    session.pending_permissions.lock().await.remove(&permission_key);
+                    session
+                        .pending_permissions
+                        .lock()
+                        .await
+                        .remove(&permission_key);
                     tool_use_to_request_id.remove(&permission_key);
 
                     // Remove from agent state
-                    let _ = session.base.ws_client.update_agent_state(move |mut state| {
-                        if let Some(requests) = state.get_mut("requests").and_then(|v| v.as_object_mut()) {
-                            requests.remove(&permission_key);
-                        }
-                        state
-                    }).await;
+                    let _ = session
+                        .base
+                        .ws_client
+                        .update_agent_state(move |mut state| {
+                            if let Some(requests) =
+                                state.get_mut("requests").and_then(|v| v.as_object_mut())
+                            {
+                                requests.remove(&permission_key);
+                            }
+                            state
+                        })
+                        .await;
                 }
                 SdkMessage::Log { log } => {
                     debug!(
@@ -619,5 +644,3 @@ pub async fn claude_remote_launcher(
         }
     }
 }
-
-

@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use tracing::{error, info, warn};
 
@@ -9,8 +9,8 @@ use hapir_shared::schemas::Session;
 
 use crate::notifications::push_channel::NotificationChannel;
 use crate::notifications::session_info::get_agent_name;
-use crate::store::users;
 use crate::store::Store;
+use crate::store::users;
 use crate::sync::SyncEngine;
 
 use super::api::{InlineKeyboardButton, InlineKeyboardMarkup, TelegramApi, WebAppInfo};
@@ -91,8 +91,7 @@ impl HappyBot {
                             } else {
                                 "Open HAPIR Mini App:"
                             };
-                            if let Err(e) =
-                                api.send_message(chat_id, reply, Some(&keyboard)).await
+                            if let Err(e) = api.send_message(chat_id, reply, Some(&keyboard)).await
                             {
                                 error!(error = %e, "failed to reply to command");
                             }
@@ -113,24 +112,24 @@ impl HappyBot {
 
                         let Some(namespace) = namespace else {
                             let _ = api
-                                .answer_callback_query(&cq.id, Some("Telegram account is not bound"))
+                                .answer_callback_query(
+                                    &cq.id,
+                                    Some("Telegram account is not bound"),
+                                )
                                 .await;
                             continue;
                         };
 
-                        let (chat_id, message_id) = match cq
-                            .message
-                            .as_ref()
-                            .map(|m| (m.chat.id, m.message_id))
-                        {
-                            Some(pair) => pair,
-                            None => {
-                                let _ = api
-                                    .answer_callback_query(&cq.id, Some("Message expired"))
-                                    .await;
-                                continue;
-                            }
-                        };
+                        let (chat_id, message_id) =
+                            match cq.message.as_ref().map(|m| (m.chat.id, m.message_id)) {
+                                Some(pair) => pair,
+                                None => {
+                                    let _ = api
+                                        .answer_callback_query(&cq.id, Some("Message expired"))
+                                        .await;
+                                    continue;
+                                }
+                            };
 
                         handle_callback(
                             data,
@@ -175,10 +174,8 @@ impl NotificationChannel for HappyBot {
             }
 
             let agent_name = get_agent_name(session);
-            let url = build_mini_app_deep_link(
-                &self.public_url,
-                &format!("session_{}", session.id),
-            );
+            let url =
+                build_mini_app_deep_link(&self.public_url, &format!("session_{}", session.id));
             let keyboard = InlineKeyboardMarkup {
                 inline_keyboard: vec![vec![InlineKeyboardButton {
                     text: "Open Session".into(),
@@ -189,10 +186,7 @@ impl NotificationChannel for HappyBot {
 
             let chat_ids = self.get_bound_chat_ids(&session.namespace);
             for chat_id in chat_ids {
-                let text = format!(
-                    "It's ready!\n\n{} is waiting for your command",
-                    agent_name
-                );
+                let text = format!("It's ready!\n\n{} is waiting for your command", agent_name);
                 if let Err(e) = self.api.send_message(chat_id, &text, Some(&keyboard)).await {
                     error!(chat_id, error = %e, "failed to send ready notification");
                 }

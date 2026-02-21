@@ -1,22 +1,22 @@
 use std::convert::Infallible;
 
 use axum::{
+    Json, Router,
     extract::{Extension, Query, State},
     http::StatusCode,
     response::sse::{Event, KeepAlive, Sse},
     routing::{get, post},
-    Json, Router,
 };
 use futures::stream::Stream;
 use serde::Deserialize;
-use serde_json::{json, Value};
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use serde_json::{Value, json};
 use tokio_stream::StreamExt;
+use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use crate::sync::sse_manager::SseMessage;
 use crate::sync::visibility_tracker::VisibilityState;
-use crate::web::middleware::auth::AuthContext;
 use crate::web::AppState;
+use crate::web::middleware::auth::AuthContext;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -49,7 +49,10 @@ async fn events_handler(
 
     // Validate session_id and machine_id if provided
     if let Some(ref sid) = session_id {
-        let access = state.sync_engine.resolve_session_access(sid, &namespace).await;
+        let access = state
+            .sync_engine
+            .resolve_session_access(sid, &namespace)
+            .await;
         match access {
             Ok((resolved_id, _session)) => {
                 resolved_session_id = Some(resolved_id);
@@ -207,7 +210,8 @@ async fn set_visibility(
         VisibilityState::Hidden
     };
 
-    let updated = state.sync_engine
+    let updated = state
+        .sync_engine
         .set_sse_visibility(&body.subscription_id, &auth.namespace, vis);
 
     if !updated {

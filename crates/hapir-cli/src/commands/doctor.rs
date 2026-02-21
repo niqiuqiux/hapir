@@ -1,5 +1,5 @@
-use crate::config::Configuration;
-use crate::persistence;
+use hapir_infra::config::Configuration;
+use hapir_infra::persistence;
 
 pub fn run() -> anyhow::Result<()> {
     let config = Configuration::create()?;
@@ -20,14 +20,15 @@ pub fn run() -> anyhow::Result<()> {
     );
     println!(
         "  Machine ID: {}",
-        settings
-            .machine_id
-            .as_deref()
-            .unwrap_or("not set")
+        settings.machine_id.as_deref().unwrap_or("not set")
     );
     println!(
         "  Experimental: {}",
-        if config.is_experimental { "enabled" } else { "disabled" }
+        if config.is_experimental {
+            "enabled"
+        } else {
+            "disabled"
+        }
     );
 
     // Check runner state

@@ -51,7 +51,8 @@ impl TerminalRegistry {
             last_activity: Instant::now(),
         };
 
-        self.terminals.insert(terminal_id.to_string(), entry.clone());
+        self.terminals
+            .insert(terminal_id.to_string(), entry.clone());
         self.by_socket
             .entry(socket_id.to_string())
             .or_default()
@@ -109,7 +110,10 @@ impl TerminalRegistry {
     }
 
     pub fn count_for_session(&self, session_id: &str) -> usize {
-        self.by_session.get(session_id).map(|s| s.len()).unwrap_or(0)
+        self.by_session
+            .get(session_id)
+            .map(|s| s.len())
+            .unwrap_or(0)
     }
 
     /// Returns terminal IDs that have been idle beyond the timeout.
@@ -122,7 +126,11 @@ impl TerminalRegistry {
             .collect()
     }
 
-    fn remove_from_index(index: &mut HashMap<String, HashSet<String>>, key: &str, terminal_id: &str) {
+    fn remove_from_index(
+        index: &mut HashMap<String, HashSet<String>>,
+        key: &str,
+        terminal_id: &str,
+    ) {
         if let Some(set) = index.get_mut(key) {
             set.remove(terminal_id);
             if set.is_empty() {

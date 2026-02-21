@@ -102,10 +102,7 @@ pub struct VersionedValue {
 #[serde(tag = "t")]
 pub enum UpdateBody {
     #[serde(rename = "new-message")]
-    NewMessage {
-        sid: String,
-        message: UpdateMessage,
-    },
+    NewMessage { sid: String, message: UpdateMessage },
     #[serde(rename = "update-session")]
     UpdateSession {
         sid: String,

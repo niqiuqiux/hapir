@@ -3,7 +3,11 @@ use serde_json::Value;
 /// Derive a human-readable tool name from a permission request's fields.
 ///
 /// Priority: title > rawInput.name > rawInput.tool > kind > "Tool"
-pub fn derive_tool_name(title: Option<&str>, kind: Option<&str>, raw_input: Option<&Value>) -> String {
+pub fn derive_tool_name(
+    title: Option<&str>,
+    kind: Option<&str>,
+    raw_input: Option<&Value>,
+) -> String {
     if let Some(t) = title {
         let trimmed = t.trim();
         if !trimmed.is_empty() {

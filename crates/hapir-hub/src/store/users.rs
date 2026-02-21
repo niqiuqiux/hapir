@@ -29,12 +29,11 @@ pub fn get_user(conn: &Connection, platform: &str, platform_user_id: &str) -> Op
 }
 
 pub fn get_users_by_platform(conn: &Connection, platform: &str) -> Vec<StoredUser> {
-    let mut stmt = match conn.prepare(
-        "SELECT * FROM users WHERE platform = ?1 ORDER BY created_at ASC",
-    ) {
-        Ok(s) => s,
-        Err(_) => return vec![],
-    };
+    let mut stmt =
+        match conn.prepare("SELECT * FROM users WHERE platform = ?1 ORDER BY created_at ASC") {
+            Ok(s) => s,
+            Err(_) => return vec![],
+        };
     stmt.query_map(rusqlite::params![platform], row_to_user)
         .map(|rows| rows.filter_map(|r| r.ok()).collect())
         .unwrap_or_default()

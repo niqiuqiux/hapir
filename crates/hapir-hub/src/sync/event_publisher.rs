@@ -40,7 +40,8 @@ impl EventPublisher {
         machine_id: Option<String>,
         visibility: VisibilityState,
     ) -> (mpsc::UnboundedReceiver<SseMessage>, SseSubscription) {
-        self.sse_manager.subscribe(id, namespace, all, session_id, machine_id, visibility)
+        self.sse_manager
+            .subscribe(id, namespace, all, session_id, machine_id, visibility)
     }
 
     pub fn unsubscribe_sse(&self, id: &str) {
@@ -52,7 +53,9 @@ impl EventPublisher {
     }
 
     pub fn has_visible_sse_connection(&self, namespace: &str) -> bool {
-        self.sse_manager.visibility().has_visible_connection(namespace)
+        self.sse_manager
+            .visibility()
+            .has_visible_connection(namespace)
     }
 
     pub fn set_sse_visibility(
@@ -61,7 +64,9 @@ impl EventPublisher {
         namespace: &str,
         state: VisibilityState,
     ) -> bool {
-        self.sse_manager.visibility().set_visibility(subscription_id, namespace, state)
+        self.sse_manager
+            .visibility()
+            .set_visibility(subscription_id, namespace, state)
     }
 
     pub fn send_heartbeats(&self) {

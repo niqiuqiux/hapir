@@ -1,14 +1,15 @@
-use super::settings::{read_settings, write_settings, settings_file_path, VapidKeys};
+use super::settings::{VapidKeys, read_settings, settings_file_path, write_settings};
 use anyhow::Result;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use std::path::Path;
 
 pub fn get_or_create_vapid_keys(data_dir: &Path) -> Result<VapidKeys> {
     let settings_path = settings_file_path(data_dir);
     if let Ok(Some(ref settings)) = read_settings(&settings_path)
         && let Some(ref keys) = settings.vapid_keys
-        && !keys.public_key.is_empty() && !keys.private_key.is_empty()
+        && !keys.public_key.is_empty()
+        && !keys.private_key.is_empty()
     {
         return Ok(keys.clone());
     }
@@ -17,8 +18,7 @@ pub fn get_or_create_vapid_keys(data_dir: &Path) -> Result<VapidKeys> {
     let keys = generate_vapid_keys()?;
 
     // Save to settings file
-    let mut settings = read_settings(&settings_path)?
-        .unwrap_or_default();
+    let mut settings = read_settings(&settings_path)?.unwrap_or_default();
     settings.vapid_keys = Some(keys.clone());
     write_settings(&settings_path, &settings)?;
 

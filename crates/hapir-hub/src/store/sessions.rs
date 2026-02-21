@@ -68,7 +68,15 @@ pub fn get_or_create_session(
             todos, todos_updated_at,
             active, active_at, seq
         ) VALUES (?1, ?2, ?3, NULL, ?4, ?5, ?6, 1, ?7, 1, NULL, NULL, 0, NULL, 0)",
-        rusqlite::params![id, tag, namespace, now, now, metadata_json, agent_state_json],
+        rusqlite::params![
+            id,
+            tag,
+            namespace,
+            now,
+            now,
+            metadata_json,
+            agent_state_json
+        ],
     )?;
 
     get_session(conn, &id).ok_or_else(|| anyhow::anyhow!("failed to create session"))
@@ -96,7 +104,8 @@ pub fn update_session_metadata(
         expected_version,
         encoded.as_deref(),
         &[
-            "updated_at = CASE WHEN :touch_updated_at = 1 THEN :updated_at ELSE updated_at END".into(),
+            "updated_at = CASE WHEN :touch_updated_at = 1 THEN :updated_at ELSE updated_at END"
+                .into(),
             "seq = seq + 1".into(),
         ],
         &[
@@ -125,10 +134,7 @@ pub fn update_session_agent_state(
         "agent_state_version",
         expected_version,
         encoded.as_deref(),
-        &[
-            "updated_at = :updated_at".into(),
-            "seq = seq + 1".into(),
-        ],
+        &["updated_at = :updated_at".into(), "seq = seq + 1".into()],
         &[(":updated_at", &now as &dyn rusqlite::types::ToSql)],
     )
 }
@@ -186,9 +192,9 @@ pub fn get_sessions(conn: &Connection) -> Vec<StoredSession> {
 }
 
 pub fn get_sessions_by_namespace(conn: &Connection, namespace: &str) -> Vec<StoredSession> {
-    let mut stmt = match conn.prepare(
-        "SELECT * FROM sessions WHERE namespace = ?1 ORDER BY updated_at DESC",
-    ) {
+    let mut stmt = match conn
+        .prepare("SELECT * FROM sessions WHERE namespace = ?1 ORDER BY updated_at DESC")
+    {
         Ok(s) => s,
         Err(_) => return vec![],
     };

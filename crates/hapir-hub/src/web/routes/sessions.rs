@@ -1,22 +1,22 @@
 use axum::{
-    extract::{Path, State}, http::StatusCode, routing::{delete, get, patch, post},
-    Extension,
-    Json,
-    Router,
+    Extension, Json, Router,
+    extract::{Path, State},
+    http::StatusCode,
+    routing::{delete, get, patch, post},
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::cmp::Ordering;
 
 use hapir_shared::modes::{
-    is_model_mode_allowed_for_flavor, is_permission_mode_allowed_for_flavor, permission_modes_for_flavor, AgentFlavor,
-    ModelMode, PermissionMode,
+    AgentFlavor, ModelMode, PermissionMode, is_model_mode_allowed_for_flavor,
+    is_permission_mode_allowed_for_flavor, permission_modes_for_flavor,
 };
 use hapir_shared::session_summary::to_session_summary;
 
 use crate::sync::{ResumeSessionErrorCode, ResumeSessionResult};
-use crate::web::middleware::auth::AuthContext;
 use crate::web::AppState;
+use crate::web::middleware::auth::AuthContext;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -57,7 +57,10 @@ async fn list_sessions(
     State(state): State<AppState>,
     Extension(auth): Extension<AuthContext>,
 ) -> (StatusCode, Json<Value>) {
-    let mut sessions = state.sync_engine.get_sessions_by_namespace(&auth.namespace).await;
+    let mut sessions = state
+        .sync_engine
+        .get_sessions_by_namespace(&auth.namespace)
+        .await;
 
     sessions.sort_by(|a, b| {
         // Active sessions first
@@ -91,7 +94,11 @@ async fn get_session(
     Extension(auth): Extension<AuthContext>,
     Path(id): Path<String>,
 ) -> (StatusCode, Json<Value>) {
-    match state.sync_engine.resolve_session_access(&id, &auth.namespace).await {
+    match state
+        .sync_engine
+        .resolve_session_access(&id, &auth.namespace)
+        .await
+    {
         Ok((_session_id, session)) => (StatusCode::OK, Json(json!({ "session": session }))),
         Err("access-denied") => (
             StatusCode::FORBIDDEN,
@@ -109,7 +116,11 @@ async fn delete_session(
     Extension(auth): Extension<AuthContext>,
     Path(id): Path<String>,
 ) -> (StatusCode, Json<Value>) {
-    let (session_id, session) = match state.sync_engine.resolve_session_access(&id, &auth.namespace).await {
+    let (session_id, session) = match state
+        .sync_engine
+        .resolve_session_access(&id, &auth.namespace)
+        .await
+    {
         Ok(pair) => pair,
         Err("access-denied") => {
             return (
@@ -176,7 +187,11 @@ async fn update_session(
         );
     }
 
-    let session_id = match state.sync_engine.resolve_session_access(&id, &auth.namespace).await {
+    let session_id = match state
+        .sync_engine
+        .resolve_session_access(&id, &auth.namespace)
+        .await
+    {
         Ok((sid, _session)) => sid,
         Err("access-denied") => {
             return (
@@ -192,7 +207,11 @@ async fn update_session(
         }
     };
 
-    match state.sync_engine.rename_session(&session_id, &body.name).await {
+    match state
+        .sync_engine
+        .rename_session(&session_id, &body.name)
+        .await
+    {
         Ok(()) => (StatusCode::OK, Json(json!({ "ok": true }))),
         Err(e) => {
             let message = e.to_string();
@@ -214,7 +233,11 @@ async fn resume_session(
     Path(id): Path<String>,
 ) -> (StatusCode, Json<Value>) {
     // Verify the session exists and belongs to the namespace first
-    if let Err(reason) = state.sync_engine.resolve_session_access(&id, &auth.namespace).await {
+    if let Err(reason) = state
+        .sync_engine
+        .resolve_session_access(&id, &auth.namespace)
+        .await
+    {
         return match reason {
             "access-denied" => (
                 StatusCode::FORBIDDEN,
@@ -257,7 +280,11 @@ async fn archive_session(
     Extension(auth): Extension<AuthContext>,
     Path(id): Path<String>,
 ) -> (StatusCode, Json<Value>) {
-    let (session_id, session) = match state.sync_engine.resolve_session_access(&id, &auth.namespace).await {
+    let (session_id, session) = match state
+        .sync_engine
+        .resolve_session_access(&id, &auth.namespace)
+        .await
+    {
         Ok(pair) => pair,
         Err("access-denied") => {
             return (
@@ -294,7 +321,11 @@ async fn abort_session(
     Extension(auth): Extension<AuthContext>,
     Path(id): Path<String>,
 ) -> (StatusCode, Json<Value>) {
-    let (session_id, session) = match state.sync_engine.resolve_session_access(&id, &auth.namespace).await {
+    let (session_id, session) = match state
+        .sync_engine
+        .resolve_session_access(&id, &auth.namespace)
+        .await
+    {
         Ok(pair) => pair,
         Err("access-denied") => {
             return (
@@ -337,7 +368,11 @@ async fn switch_session(
     Path(id): Path<String>,
     body: Option<Json<SwitchBody>>,
 ) -> (StatusCode, Json<Value>) {
-    let (session_id, session) = match state.sync_engine.resolve_session_access(&id, &auth.namespace).await {
+    let (session_id, session) = match state
+        .sync_engine
+        .resolve_session_access(&id, &auth.namespace)
+        .await
+    {
         Ok(pair) => pair,
         Err("access-denied") => {
             return (
@@ -394,7 +429,11 @@ async fn set_permission_mode(
         }
     };
 
-    let (session_id, session) = match state.sync_engine.resolve_session_access(&id, &auth.namespace).await {
+    let (session_id, session) = match state
+        .sync_engine
+        .resolve_session_access(&id, &auth.namespace)
+        .await
+    {
         Ok(pair) => pair,
         Err("access-denied") => {
             return (
@@ -434,7 +473,8 @@ async fn set_permission_mode(
         );
     }
 
-    match state.sync_engine
+    match state
+        .sync_engine
         .apply_session_config(&session_id, Some(body.mode), None)
         .await
     {
@@ -467,7 +507,11 @@ async fn set_model(
         }
     };
 
-    let (session_id, session) = match state.sync_engine.resolve_session_access(&id, &auth.namespace).await {
+    let (session_id, session) = match state
+        .sync_engine
+        .resolve_session_access(&id, &auth.namespace)
+        .await
+    {
         Ok(pair) => pair,
         Err("access-denied") => {
             return (
@@ -499,7 +543,8 @@ async fn set_model(
         );
     }
 
-    match state.sync_engine
+    match state
+        .sync_engine
         .apply_session_config(&session_id, None, Some(body.model))
         .await
     {
@@ -518,7 +563,11 @@ async fn list_slash_commands(
     Extension(auth): Extension<AuthContext>,
     Path(id): Path<String>,
 ) -> (StatusCode, Json<Value>) {
-    let (session_id, session) = match state.sync_engine.resolve_session_access(&id, &auth.namespace).await {
+    let (session_id, session) = match state
+        .sync_engine
+        .resolve_session_access(&id, &auth.namespace)
+        .await
+    {
         Ok(pair) => pair,
         Err("access-denied") => {
             return (
@@ -541,7 +590,11 @@ async fn list_slash_commands(
         .unwrap_or("claude")
         .to_string();
 
-    match state.sync_engine.list_slash_commands(&session_id, &agent).await {
+    match state
+        .sync_engine
+        .list_slash_commands(&session_id, &agent)
+        .await
+    {
         Ok(val) => (StatusCode::OK, Json(val)),
         Err(e) => (
             StatusCode::OK,
@@ -555,7 +608,11 @@ async fn list_skills(
     Extension(auth): Extension<AuthContext>,
     Path(id): Path<String>,
 ) -> (StatusCode, Json<Value>) {
-    let (session_id, _session) = match state.sync_engine.resolve_session_access(&id, &auth.namespace).await {
+    let (session_id, _session) = match state
+        .sync_engine
+        .resolve_session_access(&id, &auth.namespace)
+        .await
+    {
         Ok(pair) => pair,
         Err("access-denied") => {
             return (
@@ -642,7 +699,11 @@ async fn upload_file(
         );
     }
 
-    let (session_id, session) = match state.sync_engine.resolve_session_access(&id, &auth.namespace).await {
+    let (session_id, session) = match state
+        .sync_engine
+        .resolve_session_access(&id, &auth.namespace)
+        .await
+    {
         Ok(pair) => pair,
         Err("access-denied") => {
             return (
@@ -665,7 +726,8 @@ async fn upload_file(
         );
     }
 
-    match state.sync_engine
+    match state
+        .sync_engine
         .upload_file(&session_id, &body.filename, &body.content, &body.mime_type)
         .await
     {
@@ -708,7 +770,11 @@ async fn delete_upload_file(
         );
     }
 
-    let (session_id, session) = match state.sync_engine.resolve_session_access(&id, &auth.namespace).await {
+    let (session_id, session) = match state
+        .sync_engine
+        .resolve_session_access(&id, &auth.namespace)
+        .await
+    {
         Ok(pair) => pair,
         Err("access-denied") => {
             return (
@@ -731,7 +797,11 @@ async fn delete_upload_file(
         );
     }
 
-    match state.sync_engine.delete_upload_file(&session_id, &body.path).await {
+    match state
+        .sync_engine
+        .delete_upload_file(&session_id, &body.path)
+        .await
+    {
         Ok(resp) => {
             let val = serde_json::to_value(&resp).unwrap_or_else(|_| json!({ "success": false }));
             (StatusCode::OK, Json(val))

@@ -873,6 +873,7 @@ dependencies = [
  "clap",
  "hapir-cli",
  "hapir-hub",
+ "hapir-runner",
  "hapir-shared",
  "tokio",
  "tracing",
@@ -898,15 +899,14 @@ dependencies = [
  "anyhow",
  "atty",
  "axum",
- "base64 0.22.1",
  "clap",
  "dirs-next",
- "futures",
  "hapir-acp",
+ "hapir-infra",
+ "hapir-runner",
  "hapir-shared",
  "hex",
  "libc",
- "pin-project-lite",
  "portable-pty",
  "rand 0.8.5",
  "reqwest",
@@ -914,9 +914,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tokio",
- "tokio-tungstenite",
  "tracing",
- "urlencoding",
  "uuid",
 ]
 
@@ -957,6 +955,49 @@ dependencies = [
  "ts-rs",
  "url",
  "urlencoding",
+ "uuid",
+]
+
+[[package]]
+name = "hapir-infra"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "base64 0.22.1",
+ "dirs-next",
+ "futures",
+ "hapir-shared",
+ "hex",
+ "libc",
+ "pin-project-lite",
+ "rand 0.8.5",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
+ "urlencoding",
+ "uuid",
+]
+
+[[package]]
+name = "hapir-runner"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "hapir-infra",
+ "hapir-shared",
+ "libc",
+ "rand 0.8.5",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
  "uuid",
 ]
 

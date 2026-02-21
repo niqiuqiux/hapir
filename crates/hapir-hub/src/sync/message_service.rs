@@ -1,8 +1,8 @@
 use hapir_shared::schemas::{AttachmentMetadata, DecryptedMessage, SyncEvent};
 use serde_json::Value;
 
-use crate::store::Store;
 use super::event_publisher::EventPublisher;
+use crate::store::Store;
 
 /// Pagination info for message queries.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -44,10 +44,7 @@ impl MessageService {
             })
             .collect();
 
-        let oldest_seq = msgs
-            .iter()
-            .filter_map(|m| m.seq.map(|s| s as i64))
-            .min();
+        let oldest_seq = msgs.iter().filter_map(|m| m.seq.map(|s| s as i64)).min();
 
         let has_more = oldest_seq
             .map(|seq| !messages::get_messages(&store.conn(), session_id, 1, Some(seq)).is_empty())
