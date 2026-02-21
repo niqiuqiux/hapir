@@ -16,6 +16,9 @@ CLAUDE.md
 /.copilot
 /.trae
 /.opencode
+AGENTS.md
+/.codex
+/.ai
 
 /crates/hapi-shared/bindings/
 /web/node_modules/

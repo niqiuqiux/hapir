@@ -214,6 +214,15 @@ impl CodexMessageHandler {
             }
             "agentMessage" => {
                 self.finalize_stream();
+
+                let text = item
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if !text.is_empty() {
+                    (self.on_message)(AgentMessage::Text { text });
+                }
             }
             _ => {}
         }

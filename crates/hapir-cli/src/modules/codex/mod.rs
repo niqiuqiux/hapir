@@ -52,13 +52,20 @@ fn resolve_starting_mode(mode_str: Option<&str>, started_by: SharedStartedBy) ->
     }
 }
 
+fn codex_message(data: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "role": "assistant",
+        "content": { "type": "codex", "data": data }
+    })
+}
+
 async fn forward_agent_message(ws: &WsSessionClient, msg: AgentMessage) {
     match msg {
         AgentMessage::Text { text } => {
-            ws.send_message(serde_json::json!({
-                "type": "assistant",
-                "message": { "role": "assistant", "content": text },
-            }))
+            ws.send_message(codex_message(serde_json::json!({
+                "type": "message",
+                "message": text,
+            })))
             .await;
         }
         AgentMessage::TextDelta {
@@ -74,31 +81,36 @@ async fn forward_agent_message(ws: &WsSessionClient, msg: AgentMessage) {
             input,
             status,
         } => {
-            ws.send_message(serde_json::json!({
-                "type": "tool_call",
-                "toolCall": { "id": id, "name": name, "input": input, "status": status },
-            }))
+            ws.send_message(codex_message(serde_json::json!({
+                "type": "tool-call",
+                "callId": id,
+                "name": name,
+                "input": input,
+                "status": status,
+            })))
             .await;
         }
         AgentMessage::ToolResult { id, output, status } => {
-            ws.send_message(serde_json::json!({
-                "type": "tool_result",
-                "toolResult": { "id": id, "output": output, "status": status },
-            }))
+            ws.send_message(codex_message(serde_json::json!({
+                "type": "tool-call-result",
+                "callId": id,
+                "output": output,
+                "status": status,
+            })))
             .await;
         }
         AgentMessage::Plan { items } => {
-            ws.send_message(serde_json::json!({
+            ws.send_message(codex_message(serde_json::json!({
                 "type": "plan",
                 "entries": items,
-            }))
+            })))
             .await;
         }
         AgentMessage::Error { message } => {
-            ws.send_message(serde_json::json!({
-                "type": "assistant",
-                "message": { "role": "assistant", "content": message },
-            }))
+            ws.send_message(codex_message(serde_json::json!({
+                "type": "message",
+                "message": message,
+            })))
             .await;
         }
         AgentMessage::TurnComplete { .. } | AgentMessage::ThinkingStatus { .. } => {}
@@ -438,18 +450,21 @@ async fn codex_remote_launcher(
 
         session.on_thinking_change(true).await;
 
-        let ws_for_update = session.ws_client.clone();
-        let thinking_status = session.thinking_status.clone();
-        let on_update: Box<dyn Fn(AgentMessage) + Send + Sync> = Box::new(move |msg| {
-            let ws = ws_for_update.clone();
-            let ts = thinking_status.clone();
-            tokio::spawn(async move {
+        let (msg_tx, mut msg_rx) = tokio::sync::mpsc::unbounded_channel::<AgentMessage>();
+        let ws_for_consumer = session.ws_client.clone();
+        let ts_for_consumer = session.thinking_status.clone();
+        let consumer = tokio::spawn(async move {
+            while let Some(msg) = msg_rx.recv().await {
                 if let AgentMessage::ThinkingStatus { ref status } = msg {
-                    *ts.lock().await = status.clone();
-                    return;
+                    *ts_for_consumer.lock().await = status.clone();
+                    continue;
                 }
-                forward_agent_message(&ws, msg).await;
-            });
+                forward_agent_message(&ws_for_consumer, msg).await;
+            }
+        });
+
+        let on_update: Box<dyn Fn(AgentMessage) + Send + Sync> = Box::new(move |msg| {
+            let _ = msg_tx.send(msg);
         });
 
         let content = vec![PromptContent::Text { text: prompt }];
@@ -463,6 +478,10 @@ async fn codex_remote_launcher(
                 }))
                 .await;
         }
+
+        // prompt() 返回后 on_update 已被 drop，msg_tx 随之关闭，
+        // consumer 会处理完剩余消息后退出
+        let _ = consumer.await;
 
         session.on_thinking_change(false).await;
 
