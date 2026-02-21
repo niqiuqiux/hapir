@@ -7,6 +7,43 @@ use hapir_cli::commands::codex::CodexArgs;
 use hapir_cli::commands::gemini::GeminiArgs;
 use hapir_cli::commands::opencode::OpencodeArgs;
 
+/// A writer that routes to stderr or sink based on the logging suppression flag.
+/// Used to silence hapir's own logs while a local agent process owns the terminal.
+enum ConditionalWriter {
+    Stderr(std::io::Stderr),
+    Sink(std::io::Sink),
+}
+
+impl std::io::Write for ConditionalWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self {
+            ConditionalWriter::Stderr(w) => w.write(buf),
+            ConditionalWriter::Sink(w) => w.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            ConditionalWriter::Stderr(w) => w.flush(),
+            ConditionalWriter::Sink(w) => w.flush(),
+        }
+    }
+}
+
+struct ConditionalWriterFactory;
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for ConditionalWriterFactory {
+    type Writer = ConditionalWriter;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        if hapir_cli::terminal_utils::is_logging_suppressed() {
+            ConditionalWriter::Sink(std::io::sink())
+        } else {
+            ConditionalWriter::Stderr(std::io::stderr())
+        }
+    }
+}
+
 #[derive(Parser)]
 #[command(name = "hapir", about = "Local-first AI agent remote control")]
 struct Cli {
@@ -107,7 +144,7 @@ fn build_cli() -> clap::Command {
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
-        .with_writer(std::io::stderr)
+        .with_writer(ConditionalWriterFactory)
         .with_ansi(std::io::stderr().is_terminal())
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()

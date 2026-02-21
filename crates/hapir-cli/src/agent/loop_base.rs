@@ -1,9 +1,9 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use tracing::debug;
-
 use super::session_base::{AgentSessionBase, SessionMode};
+use crate::terminal_utils;
+use tracing::debug;
 
 /// Result of a loop iteration: switch to the other mode, or exit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,7 +66,9 @@ pub async fn run_local_remote_loop<Mode: Clone + Send + 'static>(
 
         match mode {
             SessionMode::Local => {
+                terminal_utils::prepare_for_local_agent();
                 let reason = run_local(&session).await;
+                terminal_utils::restore_after_local_agent();
                 if reason == LoopResult::Exit {
                     return Ok(());
                 }

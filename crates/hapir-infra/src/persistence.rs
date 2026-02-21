@@ -1,3 +1,5 @@
+use std::fs::OpenOptions;
+use std::io::ErrorKind;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
@@ -72,13 +74,13 @@ pub fn update_settings(path: &Path, updater: impl FnOnce(&mut Settings)) -> Resu
     // Acquire exclusive lock with retries
     let mut attempts = 0;
     loop {
-        match std::fs::OpenOptions::new()
+        match OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&lock_path)
         {
             Ok(_file) => break,
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => {
                 attempts += 1;
                 if attempts >= MAX_LOCK_ATTEMPTS {
                     bail!("failed to acquire settings lock after 5 seconds");
@@ -142,7 +144,7 @@ pub fn clear_runner_state(state_path: &Path, lock_path: &Path) {
 /// Acquire an exclusive runner lock file. Returns a guard that releases on drop.
 pub fn acquire_runner_lock(lock_path: &Path, max_attempts: u32) -> Option<RunnerLockGuard> {
     for attempt in 1..=max_attempts {
-        match std::fs::OpenOptions::new()
+        match OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(lock_path)
@@ -154,7 +156,7 @@ pub fn acquire_runner_lock(lock_path: &Path, max_attempts: u32) -> Option<Runner
                     path: lock_path.to_path_buf(),
                 });
             }
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => {
                 // Check if holder process is still alive
                 if let Ok(content) = std::fs::read_to_string(lock_path)
                     && let Ok(pid) = content.trim().parse::<u32>()

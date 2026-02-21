@@ -1,4 +1,4 @@
-use std::process::Stdio;
+use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result};
 use tracing::debug;
@@ -11,7 +11,7 @@ pub fn spawn_runner_background() -> Result<()> {
     let exe = std::env::current_exe().context("failed to determine current executable path")?;
     debug!(exe = %exe.display(), "spawning runner background process");
 
-    let mut cmd = std::process::Command::new(&exe);
+    let mut cmd = Command::new(&exe);
     cmd.args(["runner", "start-sync"])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
