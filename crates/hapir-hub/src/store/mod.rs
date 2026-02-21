@@ -7,12 +7,17 @@ pub mod users;
 pub mod versioned_updates;
 
 use anyhow::{Context, Result};
+use r2d2::Pool;
+use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::Connection;
+use std::fs::Permissions;
 use std::path::Path;
-use std::sync::{Mutex, MutexGuard};
-use tracing::{debug, info, warn};
+use std::time::Duration;
+use tracing::{info, warn};
 
 const SCHEMA_VERSION: i64 = 3;
+const POOL_SIZE: u32 = 8;
+const POOL_CONN_TIMEOUT: Duration = Duration::from_secs(5);
 
 const REQUIRED_TABLES: &[&str] = &[
     "sessions",
@@ -22,13 +27,14 @@ const REQUIRED_TABLES: &[&str] = &[
     "push_subscriptions",
 ];
 
+pub type PooledConn = r2d2::PooledConnection<SqliteConnectionManager>;
+
 pub struct Store {
-    conn: Mutex<Connection>,
+    pool: Pool<SqliteConnectionManager>,
 }
 
 impl Store {
     pub fn new(path: &str) -> Result<Self> {
-        // Set directory and file permissions (matching TS behavior)
         let db_path = Path::new(path);
         if let Some(dir) = db_path.parent() {
             std::fs::create_dir_all(dir).with_context(|| {
@@ -37,12 +43,17 @@ impl Store {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
+                let _ = std::fs::set_permissions(dir, Permissions::from_mode(0o700));
             }
         }
 
-        let conn =
-            Connection::open(path).with_context(|| format!("failed to open database at {path}"))?;
+        let manager = SqliteConnectionManager::file(path);
+        let pool = Pool::builder()
+            .max_size(POOL_SIZE)
+            .connection_timeout(POOL_CONN_TIMEOUT)
+            .connection_customizer(Box::new(PragmaCustomizer))
+            .build(manager)
+            .context("failed to create connection pool")?;
 
         // Set file permissions on DB and WAL/SHM files
         #[cfg(unix)]
@@ -50,66 +61,54 @@ impl Store {
             use std::os::unix::fs::PermissionsExt;
             for suffix in &["", "-wal", "-shm"] {
                 let file_path = format!("{path}{suffix}");
-                let _ =
-                    std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(0o600));
+                let _ = std::fs::set_permissions(&file_path, Permissions::from_mode(0o600));
             }
         }
 
-        let store = Self {
-            conn: Mutex::new(conn),
-        };
-        store.configure_pragmas()?;
+        let store = Self { pool };
         store.initialize_schema()?;
 
         Ok(store)
     }
 
     pub fn new_in_memory() -> Result<Self> {
-        let conn = Connection::open_in_memory().context("failed to open in-memory database")?;
+        let manager = SqliteConnectionManager::memory().with_flags(
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
+                | rusqlite::OpenFlags::SQLITE_OPEN_CREATE
+                | rusqlite::OpenFlags::SQLITE_OPEN_FULL_MUTEX
+                | rusqlite::OpenFlags::SQLITE_OPEN_SHARED_CACHE,
+        );
+        let pool = Pool::builder()
+            .max_size(POOL_SIZE)
+            .connection_timeout(POOL_CONN_TIMEOUT)
+            .connection_customizer(Box::new(PragmaCustomizer))
+            .build(manager)
+            .context("failed to create in-memory connection pool")?;
 
-        let store = Self {
-            conn: Mutex::new(conn),
-        };
-        store.configure_pragmas()?;
+        let store = Self { pool };
         store.initialize_schema()?;
 
         Ok(store)
     }
 
-    pub fn conn(&self) -> MutexGuard<'_, Connection> {
-        self.conn.lock().unwrap_or_else(|e| e.into_inner())
+    pub fn conn(&self) -> PooledConn {
+        self.pool.get().expect("failed to get pooled connection")
     }
 
-    fn configure_pragmas(&self) -> Result<()> {
-        self.conn
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .execute_batch(
-                "PRAGMA journal_mode = WAL;
-             PRAGMA synchronous = NORMAL;
-             PRAGMA foreign_keys = ON;
-             PRAGMA busy_timeout = 5000;",
-            )
-            .context("failed to configure database pragmas")?;
-
-        debug!("database pragmas configured");
-        Ok(())
+    pub fn try_conn(&self) -> Result<PooledConn> {
+        self.pool.get().context("connection pool timeout")
     }
 
     fn get_schema_version(&self) -> Result<i64> {
         let version: i64 = self
-            .conn
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .conn()
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .context("failed to read schema version")?;
         Ok(version)
     }
 
     fn set_schema_version(&self, version: i64) -> Result<()> {
-        self.conn
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
+        self.conn()
             .pragma_update(None, "user_version", version)
             .context("failed to set schema version")?;
         Ok(())
@@ -140,7 +139,7 @@ impl Store {
     }
 
     fn assert_required_tables(&self) -> Result<()> {
-        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = self.conn();
         let mut stmt = conn
             .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?1")
             .context("failed to prepare table check query")?;
@@ -163,9 +162,7 @@ impl Store {
     }
 
     fn create_tables(&self) -> Result<()> {
-        self.conn
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
+        self.conn()
             .execute_batch(
                 "CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,
@@ -215,7 +212,7 @@ impl Store {
             )
             .context("failed to create tables (part 1)")?;
 
-        self.conn.lock().unwrap_or_else(|e| e.into_inner()).execute_batch(
+        self.conn().execute_batch(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_local_id
                 ON messages(session_id, local_id) WHERE local_id IS NOT NULL;
 
@@ -266,6 +263,21 @@ impl Store {
         }
 
         info!(version = SCHEMA_VERSION, "schema migration complete");
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct PragmaCustomizer;
+
+impl r2d2::CustomizeConnection<Connection, rusqlite::Error> for PragmaCustomizer {
+    fn on_acquire(&self, conn: &mut Connection) -> std::result::Result<(), rusqlite::Error> {
+        conn.execute_batch(
+            "PRAGMA journal_mode = WAL;
+             PRAGMA synchronous = NORMAL;
+             PRAGMA foreign_keys = ON;
+             PRAGMA busy_timeout = 5000;",
+        )?;
         Ok(())
     }
 }
