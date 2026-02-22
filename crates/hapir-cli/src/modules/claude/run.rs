@@ -160,51 +160,19 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
         }
     }
 
-    // Start hook server for receiving Claude session notifications
-    let ws_for_hook = ws_client.clone();
-    let hook_server = start_hook_server(
-        Arc::new(move |sid, _data| {
-            let client = ws_for_hook.clone();
-            let claude_sid = sid;
-            tokio::spawn(async move {
-                debug!(
-                    "[runClaude] Hook server received Claude session ID: {}",
-                    claude_sid
-                );
-                let csid = claude_sid.clone();
-                let _ = client
-                    .update_metadata(move |mut metadata| {
-                        metadata.claude_session_id = Some(csid);
-                        metadata
-                    })
-                    .await;
-            });
-        }),
-        None,
-    )
-    .await?;
-
-    let hook_port = hook_server.port;
-    let hook_token = hook_server.token.clone();
-    debug!("[runClaude] Hook server started on port {}", hook_port);
-
-    let hook_settings_path = write_hook_settings(&session_id, hook_port, &hook_token);
-
     // Create RunnerLifecycle and register process handlers
     let ws_for_lifecycle = ws_client.clone();
     let lifecycle = RunnerLifecycle::new(RunnerLifecycleOptions {
         ws_client: ws_for_lifecycle,
         log_tag: "runClaude".to_string(),
-        stop_keep_alive: None, // Will be set after session base is created
+        stop_keep_alive: None,
         on_before_close: None,
         on_after_close: None,
     });
     lifecycle.register_process_handlers();
 
-    // Set controlledByUser on session
     set_controlled_by_user(&ws_client, starting_mode).await;
 
-    // Create MessageQueue2<EnhancedMode> with mode hash
     let initial_mode = EnhancedMode {
         permission_mode: options.permission_mode.clone(),
         model: options.model.clone(),
@@ -213,7 +181,6 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
 
     let queue = Arc::new(MessageQueue2::new(compute_mode_hash));
 
-    // Create AgentSessionBase
     let on_mode_change = create_mode_change_handler(ws_client.clone());
     let session_base = AgentSessionBase::new(AgentSessionBaseOptions {
         api: api.clone(),
@@ -234,7 +201,31 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
         model_mode: bootstrap.session_info.model_mode,
     });
 
-    // Create ClaudeSession wrapping the base
+    // Start hook server for receiving Claude session notifications.
+    // Must be created after session_base so we can call on_session_found.
+    let sb_for_hook = session_base.clone();
+    let hook_server = start_hook_server(
+        Arc::new(move |sid, _data| {
+            let sb = sb_for_hook.clone();
+            let claude_sid = sid;
+            tokio::spawn(async move {
+                debug!(
+                    "[runClaude] Hook server received Claude session ID: {}",
+                    claude_sid
+                );
+                sb.on_session_found(&claude_sid).await;
+            });
+        }),
+        None,
+    )
+    .await?;
+
+    let hook_port = hook_server.port;
+    let hook_token = hook_server.token.clone();
+    debug!("[runClaude] Hook server started on port {}", hook_port);
+
+    let hook_settings_path = write_hook_settings(&session_id, hook_port, &hook_token);
+
     let claude_session = Arc::new(ClaudeSession {
         base: session_base.clone(),
         claude_env_vars: options.claude_env_vars.clone(),

@@ -494,6 +494,11 @@ async fn codex_local_launcher(session: &Arc<AgentSessionBase<CodexMode>>) -> Loo
     let working_directory = session.path.clone();
     debug!("[codexLocalLauncher] Starting in {}", working_directory);
 
+    // TODO: Implement local message sync for Codex
+    // - Create CodexSessionScanner that scans `~/.codex/sessions/{date}/{sessionId}.jsonl`
+    // - Wrap messages with `codex_message()` before sending
+    // - Use LocalSyncDriver::start(scanner, ws_client, Duration::from_secs(2), "codexLocalSync")
+
     let mut cmd = tokio::process::Command::new("codex");
     cmd.current_dir(&working_directory);
 

@@ -325,6 +325,10 @@ async fn gemini_local_launcher(session: &Arc<AgentSessionBase<GeminiMode>>) -> L
     let working_directory = session.path.clone();
     debug!("[geminiLocalLauncher] Starting in {}", working_directory);
 
+    // TODO: Implement local message sync for Gemini
+    // - Create GeminiSessionScanner that scans transcript JSON files
+    // - Use LocalSyncDriver::start(scanner, ws_client, Duration::from_secs(2), "geminiLocalSync")
+
     let mut cmd = tokio::process::Command::new("gemini");
     cmd.current_dir(&working_directory);
 

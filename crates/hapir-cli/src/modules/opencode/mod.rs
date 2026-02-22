@@ -93,6 +93,10 @@ async fn opencode_local_launcher(session: &Arc<AgentSessionBase<OpencodeMode>>) 
     let working_directory = session.path.clone();
     debug!("[opencodeLocalLauncher] Starting in {}", working_directory);
 
+    // TODO: Implement local message sync for OpenCode
+    // - Create OpencodeSessionScanner that scans `~/.local/share/opencode/storage/` JSON files
+    // - Use LocalSyncDriver::start(scanner, ws_client, Duration::from_secs(2), "opencodeLocalSync")
+
     let mut cmd = tokio::process::Command::new("opencode");
     cmd.current_dir(&working_directory);
 
