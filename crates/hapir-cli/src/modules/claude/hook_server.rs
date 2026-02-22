@@ -1,13 +1,15 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use axum::Router;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::post;
 use tokio::net::TcpListener;
+use tokio::sync::oneshot;
 use tracing::debug;
 
+use crate::agent::session_base::SessionMode;
 use hapir_infra::ws::session_client::WsSessionClient;
 
 /// Data received from Claude's SessionStart hook.
@@ -23,7 +25,7 @@ pub type OnThinkingChange = Arc<dyn Fn(bool) + Send + Sync>;
 pub struct HookServer {
     pub port: u16,
     pub token: String,
-    shutdown_tx: tokio::sync::oneshot::Sender<()>,
+    shutdown_tx: oneshot::Sender<()>,
 }
 
 impl HookServer {
@@ -39,6 +41,7 @@ struct AppState {
     on_session_hook: OnSessionHook,
     on_thinking_change: Option<OnThinkingChange>,
     ws_client: Option<Arc<WsSessionClient>>,
+    session_mode: Arc<Mutex<SessionMode>>,
 }
 
 /// Start a dedicated HTTP server on 127.0.0.1:0 for receiving Claude session hooks.
@@ -51,6 +54,7 @@ pub async fn start_hook_server(
     token: Option<String>,
     on_thinking_change: Option<OnThinkingChange>,
     ws_client: Option<Arc<WsSessionClient>>,
+    session_mode: Arc<Mutex<SessionMode>>,
 ) -> anyhow::Result<HookServer> {
     let hook_token = token.unwrap_or_else(|| {
         use rand::RngCore;
@@ -65,6 +69,7 @@ pub async fn start_hook_server(
         on_session_hook,
         on_thinking_change,
         ws_client,
+        session_mode,
     });
 
     let app = Router::new()
@@ -78,7 +83,7 @@ pub async fn start_hook_server(
 
     debug!("[hookServer] Started on port {}", port);
 
-    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 
     tokio::spawn(async move {
         axum::serve(listener, app)
@@ -158,23 +163,29 @@ async fn handle_event(
 
     debug!("[hookServer] Received event: {}", event_name);
 
+    let is_local = *state.session_mode.lock().unwrap() == SessionMode::Local;
+
     match event_name {
         "UserPromptSubmit" => {
             if let Some(ref cb) = state.on_thinking_change {
                 cb(true);
             }
-            if let Some(ref ws) = state.ws_client {
-                let prompt = data
-                    .get("prompt")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                if !prompt.is_empty() {
-                    ws.send_message(serde_json::json!({
-                        "role": "user",
-                        "content": { "type": "text", "text": prompt },
-                        "meta": { "sentFrom": "cli" }
-                    }))
-                    .await;
+            // Only forward user messages in local mode; in remote mode the SDK
+            // already emits a User message that the remote launcher forwards.
+            if is_local {
+                if let Some(ref ws) = state.ws_client {
+                    let prompt = data
+                        .get("prompt")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    if !prompt.is_empty() {
+                        ws.send_message(serde_json::json!({
+                            "role": "user",
+                            "content": { "type": "text", "text": prompt },
+                            "meta": { "sentFrom": "cli" }
+                        }))
+                        .await;
+                    }
                 }
             }
         }
@@ -182,29 +193,33 @@ async fn handle_event(
             if let Some(ref cb) = state.on_thinking_change {
                 cb(false);
             }
-            if let Some(ref ws) = state.ws_client {
-                let text = data
-                    .get("last_assistant_message")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                if !text.is_empty() {
-                    ws.send_message(serde_json::json!({
-                        "role": "assistant",
-                        "content": {
-                            "type": "output",
-                            "data": {
-                                "type": "assistant",
-                                "message": {
-                                    "role": "assistant",
-                                    "content": [
-                                        { "type": "text", "text": text }
-                                    ]
+            // Only forward assistant messages in local mode; in remote mode the
+            // remote launcher sends the full message with thinking blocks + usage.
+            if is_local {
+                if let Some(ref ws) = state.ws_client {
+                    let text = data
+                        .get("last_assistant_message")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    if !text.is_empty() {
+                        ws.send_message(serde_json::json!({
+                            "role": "assistant",
+                            "content": {
+                                "type": "output",
+                                "data": {
+                                    "type": "assistant",
+                                    "message": {
+                                        "role": "assistant",
+                                        "content": [
+                                            { "type": "text", "text": text }
+                                        ]
+                                    }
                                 }
-                            }
-                        },
-                        "meta": { "sentFrom": "cli" }
-                    }))
-                    .await;
+                            },
+                            "meta": { "sentFrom": "cli" }
+                        }))
+                        .await;
+                    }
                 }
             }
         }

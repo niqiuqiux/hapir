@@ -181,7 +181,17 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
 
     let queue = Arc::new(MessageQueue2::new(compute_mode_hash));
 
-    let on_mode_change = create_mode_change_handler(ws_client.clone());
+    // Shared session mode for the hook server to check.
+    // Updated via on_mode_change_cb when the loop switches local/remote.
+    let hook_session_mode = Arc::new(std::sync::Mutex::new(starting_mode));
+
+    let base_on_mode_change = create_mode_change_handler(ws_client.clone());
+    let hook_mode_for_cb = hook_session_mode.clone();
+    let on_mode_change: Box<dyn Fn(SessionMode) + Send + Sync> =
+        Box::new(move |mode: SessionMode| {
+            *hook_mode_for_cb.lock().unwrap() = mode;
+            base_on_mode_change(mode);
+        });
     let session_base = AgentSessionBase::new(AgentSessionBaseOptions {
         api: api.clone(),
         ws_client: ws_client.clone(),
@@ -225,6 +235,7 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
             });
         })),
         Some(ws_client.clone()),
+        hook_session_mode.clone(),
     )
     .await?;
 
