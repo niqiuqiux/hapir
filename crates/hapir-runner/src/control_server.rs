@@ -372,7 +372,6 @@ pub async fn do_spawn_session(
             "[spawnSession] passing --resume token to agent CLI"
         );
         if agent_cmd == "codex" {
-            args.push("resume".to_string());
             args.push(resume_id.clone());
         } else {
             args.push("--resume".to_string());

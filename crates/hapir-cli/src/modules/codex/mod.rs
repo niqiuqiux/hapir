@@ -124,6 +124,7 @@ pub async fn run(
     hapir_starting_mode: Option<&str>,
     model: Option<&str>,
     yolo: bool,
+    resume: Option<&str>,
 ) -> anyhow::Result<()> {
     let working_directory = working_directory.to_string();
     let started_by = match started_by {
@@ -438,6 +439,7 @@ pub async fn run(
     let sb_for_local = session_base.clone();
     let sb_for_remote = session_base.clone();
     let backend_for_remote = backend.clone();
+    let resume_thread_id: Option<String> = resume.map(|s| s.to_string());
 
     let loop_result = run_local_remote_session(LoopOptions {
         session: session_base.clone(),
@@ -450,7 +452,8 @@ pub async fn run(
         run_remote: Box::new(move |_base| {
             let sb = sb_for_remote.clone();
             let b = backend_for_remote.clone();
-            Box::pin(async move { codex_remote_launcher(&sb, &b).await })
+            let resume = resume_thread_id.clone();
+            Box::pin(async move { codex_remote_launcher(&sb, &b, resume.as_deref()).await })
         }),
         on_session_ready: None,
     })
@@ -508,6 +511,7 @@ async fn codex_local_launcher(session: &Arc<AgentSessionBase<CodexMode>>) -> Loo
 async fn codex_remote_launcher(
     session: &Arc<AgentSessionBase<CodexMode>>,
     backend: &Arc<CodexAppServerBackend>,
+    resume_thread_id: Option<&str>,
 ) -> LoopResult {
     let working_directory = session.path.clone();
     debug!("[codexRemoteLauncher] Starting in {}", working_directory);
@@ -527,27 +531,77 @@ async fn codex_remote_launcher(
         return LoopResult::Exit;
     }
 
-    let thread_id = match backend
-        .new_session(AgentSessionConfig {
-            cwd: working_directory.clone(),
-            mcp_servers: vec![],
-        })
-        .await
-    {
-        Ok(tid) => {
-            session.on_session_found(&tid).await;
-            tid
+    // Resolve resume token: CLI arg first, then metadata fallback
+    let resume_id = match resume_thread_id {
+        Some(id) => Some(id.to_string()),
+        None => session
+            .ws_client
+            .metadata()
+            .await
+            .and_then(|m| m.codex_session_id),
+    };
+
+    let thread_id = match resume_id {
+        Some(ref prev_id) => {
+            debug!("[codexRemoteLauncher] Attempting to resume thread: {}", prev_id);
+            match backend.resume_session(prev_id).await {
+                Ok(tid) => {
+                    debug!("[codexRemoteLauncher] Thread resumed: {}", tid);
+                    session.on_session_found(&tid).await;
+                    tid
+                }
+                Err(e) => {
+                    warn!("[codexRemoteLauncher] Failed to resume thread {}: {}, starting new", prev_id, e);
+                    match backend
+                        .new_session(AgentSessionConfig {
+                            cwd: working_directory.clone(),
+                            mcp_servers: vec![],
+                        })
+                        .await
+                    {
+                        Ok(tid) => {
+                            session.on_session_found(&tid).await;
+                            tid
+                        }
+                        Err(e2) => {
+                            warn!("[codexRemoteLauncher] Failed to start thread: {}", e2);
+                            session
+                                .ws_client
+                                .send_message(serde_json::json!({
+                                    "type": "error",
+                                    "message": format!("Failed to start codex thread: {}", e2),
+                                }))
+                                .await;
+                            return LoopResult::Exit;
+                        }
+                    }
+                }
+            }
         }
-        Err(e) => {
-            warn!("[codexRemoteLauncher] Failed to start thread: {}", e);
-            session
-                .ws_client
-                .send_message(serde_json::json!({
-                    "type": "error",
-                    "message": format!("Failed to start codex thread: {}", e),
-                }))
-                .await;
-            return LoopResult::Exit;
+        None => {
+            match backend
+                .new_session(AgentSessionConfig {
+                    cwd: working_directory.clone(),
+                    mcp_servers: vec![],
+                })
+                .await
+            {
+                Ok(tid) => {
+                    session.on_session_found(&tid).await;
+                    tid
+                }
+                Err(e) => {
+                    warn!("[codexRemoteLauncher] Failed to start thread: {}", e);
+                    session
+                        .ws_client
+                        .send_message(serde_json::json!({
+                            "type": "error",
+                            "message": format!("Failed to start codex thread: {}", e),
+                        }))
+                        .await;
+                    return LoopResult::Exit;
+                }
+            }
         }
     };
 

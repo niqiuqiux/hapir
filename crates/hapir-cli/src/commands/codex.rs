@@ -45,6 +45,7 @@ pub async fn run(args: CodexArgs) -> Result<()> {
         args.hapir_starting_mode.as_deref(),
         args.model.as_deref(),
         args.yolo,
+        args.resume.as_deref(),
     )
     .await
 }

@@ -56,6 +56,43 @@ impl CodexAppServerBackend {
     }
 }
 
+impl CodexAppServerBackend {
+    /// Resume an existing Codex thread by ID using `thread/resume`.
+    pub async fn resume_session(&self, thread_id: &str) -> anyhow::Result<String> {
+        let transport = self
+            .transport
+            .lock()
+            .await
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("Codex transport not initialized"))?;
+
+        let response = transport
+            .send_request_default(
+                "thread/resume",
+                serde_json::json!({ "threadId": thread_id }),
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        debug!("[CodexAppServer] thread/resume response: {:?}", response);
+
+        let resolved_id = response
+            .as_object()
+            .and_then(|o| {
+                o.get("threadId")
+                    .or_else(|| o.get("id"))
+                    .or_else(|| o.get("thread").and_then(|t| t.get("id")))
+            })
+            .and_then(|v| v.as_str())
+            .unwrap_or(thread_id)
+            .to_string();
+
+        *self.active_thread_id.lock().await = Some(resolved_id.clone());
+        debug!("[CodexAppServer] Thread resumed: {}", resolved_id);
+        Ok(resolved_id)
+    }
+}
+
 impl AgentBackend for CodexAppServerBackend {
     fn initialize(&self) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + '_>> {
         Box::pin(async move {
