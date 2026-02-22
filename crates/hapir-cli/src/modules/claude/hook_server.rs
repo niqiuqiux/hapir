@@ -8,11 +8,16 @@ use axum::routing::post;
 use tokio::net::TcpListener;
 use tracing::debug;
 
+use hapir_infra::ws::session_client::WsSessionClient;
+
 /// Data received from Claude's SessionStart hook.
 pub type SessionHookData = HashMap<String, serde_json::Value>;
 
 /// Callback invoked when a session hook is received with a valid session ID.
 pub type OnSessionHook = Arc<dyn Fn(String, SessionHookData) + Send + Sync>;
+
+/// Callback invoked when thinking state changes.
+pub type OnThinkingChange = Arc<dyn Fn(bool) + Send + Sync>;
 
 /// A running hook server handle.
 pub struct HookServer {
@@ -32,15 +37,20 @@ impl HookServer {
 struct AppState {
     token: String,
     on_session_hook: OnSessionHook,
+    on_thinking_change: Option<OnThinkingChange>,
+    ws_client: Option<Arc<WsSessionClient>>,
 }
 
 /// Start a dedicated HTTP server on 127.0.0.1:0 for receiving Claude session hooks.
 ///
-/// The server exposes a single `POST /hook/session-start` endpoint that is
-/// token-authenticated via the `x-hapi-hook-token` header.
+/// The server exposes:
+/// - `POST /hook/session-start` for session ID discovery
+/// - `POST /hook/event` for generic hook events (thinking state, etc.)
 pub async fn start_hook_server(
     on_session_hook: OnSessionHook,
     token: Option<String>,
+    on_thinking_change: Option<OnThinkingChange>,
+    ws_client: Option<Arc<WsSessionClient>>,
 ) -> anyhow::Result<HookServer> {
     let hook_token = token.unwrap_or_else(|| {
         use rand::RngCore;
@@ -53,10 +63,13 @@ pub async fn start_hook_server(
     let state = Arc::new(AppState {
         token: hook_token.clone(),
         on_session_hook,
+        on_thinking_change,
+        ws_client,
     });
 
     let app = Router::new()
         .route("/hook/session-start", post(handle_session_start))
+        .route("/hook/event", post(handle_event))
         .with_state(state);
 
     let listener = TcpListener::bind("127.0.0.1:0").await?;
@@ -88,17 +101,8 @@ async fn handle_session_start(
     headers: HeaderMap,
     body: String,
 ) -> StatusCode {
-    // Check token
-    let provided_token = headers
-        .get("x-hapi-hook-token")
-        .and_then(|v| v.to_str().ok());
-
-    match provided_token {
-        Some(t) if t == state.token => {}
-        _ => {
-            debug!("[hookServer] Unauthorized hook request");
-            return StatusCode::UNAUTHORIZED;
-        }
+    if !check_token(&state, &headers) {
+        return StatusCode::UNAUTHORIZED;
     }
 
     debug!("[hookServer] Received session hook: {}", body);
@@ -126,6 +130,102 @@ async fn handle_session_start(
         None => {
             debug!("[hookServer] Session hook received but no session_id found");
             StatusCode::UNPROCESSABLE_ENTITY
+        }
+    }
+}
+
+async fn handle_event(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: String,
+) -> StatusCode {
+    if !check_token(&state, &headers) {
+        return StatusCode::UNAUTHORIZED;
+    }
+
+    let data: serde_json::Value = match serde_json::from_str(&body) {
+        Ok(d) => d,
+        Err(_) => {
+            debug!("[hookServer] Failed to parse event data as JSON");
+            return StatusCode::BAD_REQUEST;
+        }
+    };
+
+    let event_name = data
+        .get("hook_event_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    debug!("[hookServer] Received event: {}", event_name);
+
+    match event_name {
+        "UserPromptSubmit" => {
+            if let Some(ref cb) = state.on_thinking_change {
+                cb(true);
+            }
+            if let Some(ref ws) = state.ws_client {
+                let prompt = data
+                    .get("prompt")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                if !prompt.is_empty() {
+                    ws.send_message(serde_json::json!({
+                        "role": "user",
+                        "content": { "type": "text", "text": prompt },
+                        "meta": { "sentFrom": "cli" }
+                    }))
+                    .await;
+                }
+            }
+        }
+        "Stop" => {
+            if let Some(ref cb) = state.on_thinking_change {
+                cb(false);
+            }
+            if let Some(ref ws) = state.ws_client {
+                let text = data
+                    .get("last_assistant_message")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                if !text.is_empty() {
+                    ws.send_message(serde_json::json!({
+                        "role": "assistant",
+                        "content": {
+                            "type": "output",
+                            "data": {
+                                "type": "assistant",
+                                "message": {
+                                    "role": "assistant",
+                                    "content": [
+                                        { "type": "text", "text": text }
+                                    ]
+                                }
+                            }
+                        },
+                        "meta": { "sentFrom": "cli" }
+                    }))
+                    .await;
+                }
+            }
+        }
+        other => {
+            debug!("[hookServer] Unhandled event type: {}", other);
+        }
+    }
+
+    StatusCode::OK
+}
+
+fn check_token(state: &AppState, headers: &HeaderMap) -> bool {
+    let provided_token = headers
+        .get("x-hapir-hook-token")
+        .and_then(|v| v.to_str().ok());
+
+    match provided_token {
+        Some(t) if t == state.token => true,
+        _ => {
+            debug!("[hookServer] Unauthorized hook request");
+            false
         }
     }
 }

@@ -6,5 +6,4 @@ pub mod remote_launcher;
 pub mod run;
 pub mod sdk;
 pub mod session;
-pub mod session_scanner;
 pub mod types;

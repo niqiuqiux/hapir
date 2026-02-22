@@ -1,16 +1,17 @@
+use std::time::Duration;
 use anyhow::Result;
 use tracing::debug;
 
 /// Run the session hook forwarder (internal command).
 ///
 /// Forwards hook events from agent processes to the runner. Reads stdin and
-/// POSTs it to the runner's `/hook/session-start` endpoint.
+/// POSTs it to the specified endpoint on the hook server.
 ///
-/// Args: `--port/-p PORT --token/-t TOKEN` or positional `PORT TOKEN`.
+/// Args: `--port/-p PORT --token/-t TOKEN [--endpoint/-e PATH]` or positional `PORT TOKEN`.
 pub async fn run(args: Vec<String>) -> Result<()> {
     debug!(?args, "hook-forwarder command starting");
 
-    let (port, token) = parse_args(&args)?;
+    let (port, token, endpoint) = parse_args(&args)?;
 
     // Read all of stdin into a buffer
     let body = {
@@ -23,12 +24,12 @@ pub async fn run(args: Vec<String>) -> Result<()> {
         buf
     };
 
-    debug!(port, body_len = body.len(), "forwarding hook payload");
+    debug!(port, body_len = body.len(), endpoint = %endpoint, "forwarding hook payload");
 
-    let url = format!("http://127.0.0.1:{port}/hook/session-start");
+    let url = format!("http://127.0.0.1:{port}{endpoint}");
 
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
+        .timeout(Duration::from_secs(10))
         .build()
         .map_err(|e| {
             eprintln!("hook-forwarder: failed to build HTTP client: {e}");
@@ -38,7 +39,7 @@ pub async fn run(args: Vec<String>) -> Result<()> {
     let resp = client
         .post(&url)
         .header("Content-Type", "application/json")
-        .header("x-hapi-hook-token", &token)
+        .header("x-hapir-hook-token", &token)
         .body(body)
         .send()
         .await
@@ -55,10 +56,11 @@ pub async fn run(args: Vec<String>) -> Result<()> {
     Ok(())
 }
 
-/// Parse `--port/-p PORT --token/-t TOKEN` or positional `PORT TOKEN`.
-fn parse_args(args: &[String]) -> Result<(u16, String)> {
+/// Parse `--port/-p PORT --token/-t TOKEN [--endpoint/-e PATH]` or positional `PORT TOKEN`.
+fn parse_args(args: &[String]) -> Result<(u16, String, String)> {
     let mut port: Option<u16> = None;
     let mut token: Option<String> = None;
+    let mut endpoint: Option<String> = None;
     let mut positional = Vec::new();
 
     let mut iter = args.iter();
@@ -77,6 +79,13 @@ fn parse_args(args: &[String]) -> Result<(u16, String)> {
                 token = Some(
                     iter.next()
                         .ok_or_else(|| anyhow::anyhow!("--token requires a value"))?
+                        .clone(),
+                );
+            }
+            "--endpoint" | "-e" => {
+                endpoint = Some(
+                    iter.next()
+                        .ok_or_else(|| anyhow::anyhow!("--endpoint requires a value"))?
                         .clone(),
                 );
             }
@@ -109,6 +118,7 @@ fn parse_args(args: &[String]) -> Result<(u16, String)> {
         eprintln!("hook-forwarder: missing --token/-t TOKEN");
         anyhow::anyhow!("missing token")
     })?;
+    let endpoint = endpoint.unwrap_or_else(|| "/hook/session-start".to_string());
 
-    Ok((port, token))
+    Ok((port, token, endpoint))
 }

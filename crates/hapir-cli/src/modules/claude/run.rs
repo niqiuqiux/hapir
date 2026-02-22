@@ -204,6 +204,7 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
     // Start hook server for receiving Claude session notifications.
     // Must be created after session_base so we can call on_session_found.
     let sb_for_hook = session_base.clone();
+    let sb_for_thinking = session_base.clone();
     let hook_server = start_hook_server(
         Arc::new(move |sid, _data| {
             let sb = sb_for_hook.clone();
@@ -217,6 +218,13 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
             });
         }),
         None,
+        Some(Arc::new(move |thinking| {
+            let sb = sb_for_thinking.clone();
+            tokio::spawn(async move {
+                sb.on_thinking_change(thinking).await;
+            });
+        })),
+        Some(ws_client.clone()),
     )
     .await?;
 
@@ -520,6 +528,14 @@ fn write_hook_settings(session_id: &str, hook_port: u16, hook_token: &str) -> St
     let exe_path = std::env::current_exe()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|_| "hapir".to_string());
+    let session_start_cmd = format!(
+        "{} hook-forwarder --port {} --token {}",
+        exe_path, hook_port, hook_token
+    );
+    let event_cmd = format!(
+        "{} hook-forwarder --port {} --token {} --endpoint /hook/event",
+        exe_path, hook_port, hook_token
+    );
     let settings_json = serde_json::json!({
         "hooks": {
             "SessionStart": [
@@ -527,10 +543,27 @@ fn write_hook_settings(session_id: &str, hook_port: u16, hook_token: &str) -> St
                     "hooks": [
                         {
                             "type": "command",
-                            "command": format!(
-                                "{} hook-forwarder --port {} --token {}",
-                                exe_path, hook_port, hook_token
-                            )
+                            "command": session_start_cmd
+                        }
+                    ]
+                }
+            ],
+            "UserPromptSubmit": [
+                {
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": &event_cmd
+                        }
+                    ]
+                }
+            ],
+            "Stop": [
+                {
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": &event_cmd
                         }
                     ]
                 }

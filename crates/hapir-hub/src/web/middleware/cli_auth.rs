@@ -91,7 +91,7 @@ pub async fn cli_auth(
     req.extensions_mut().insert(CliAuthContext { namespace });
     let mut response = next.run(req).await;
     response.headers_mut().insert(
-        "X-Hapi-Protocol-Version",
+        "X-Hapir-Protocol-Version",
         HeaderValue::from_str(&PROTOCOL_VERSION.to_string()).unwrap(),
     );
     Ok(response)
