@@ -90,17 +90,29 @@ function getConnectionStatus(
     }
 }
 
-function getContextWarning(contextSize: number, maxContextSize: number, t: (key: string, params?: Record<string, string | number>) => string): { text: string; color: string } | null {
-    const percentageUsed = (contextSize / maxContextSize) * 100
-    const percentageRemaining = Math.max(0, 100 - percentageUsed)
+function formatTokenCount(tokens: number): string {
+    if (tokens >= 1_000_000) {
+        const m = tokens / 1_000_000
+        return m % 1 === 0 ? `${m}M` : `${m.toFixed(1)}M`
+    }
+    if (tokens >= 1_000) {
+        const k = tokens / 1_000
+        return k % 1 === 0 ? `${k}K` : `${k.toFixed(1)}K`
+    }
+    return `${tokens}`
+}
 
-    const percent = Math.round(percentageRemaining)
+function getContextInfo(contextSize: number, maxContextSize: number): { text: string; color: string } | null {
+    const percentageUsed = (contextSize / maxContextSize) * 100
+    const percentageRemaining = 100 - percentageUsed
+
+    const text = formatTokenCount(contextSize)
     if (percentageRemaining <= 5) {
-        return { text: t('misc.percentLeft', { percent }), color: 'text-red-500' }
+        return { text, color: 'text-red-500' }
     } else if (percentageRemaining <= 10) {
-        return { text: t('misc.percentLeft', { percent }), color: 'text-amber-500' }
+        return { text, color: 'text-amber-500' }
     } else {
-        return { text: t('misc.percentLeft', { percent }), color: 'text-[var(--app-hint)]' }
+        return { text, color: 'text-[var(--app-hint)]' }
     }
 }
 
@@ -121,14 +133,14 @@ export function StatusBar(props: {
         [props.active, props.thinking, props.thinkingStatus, props.agentState, props.voiceStatus, t]
     )
 
-    const contextWarning = useMemo(
+    const contextInfo = useMemo(
         () => {
             if (props.contextSize === undefined) return null
             const maxContextSize = getContextBudgetTokens(props.modelMode)
             if (!maxContextSize) return null
-            return getContextWarning(props.contextSize, maxContextSize, t)
+            return getContextInfo(props.contextSize, maxContextSize)
         },
-        [props.contextSize, props.modelMode, t]
+        [props.contextSize, props.modelMode]
     )
 
     const permissionMode = props.permissionMode
@@ -153,9 +165,9 @@ export function StatusBar(props: {
                         {connectionStatus.text}
                     </span>
                 </div>
-                {contextWarning ? (
-                    <span className={`text-[10px] ${contextWarning.color}`}>
-                        {contextWarning.text}
+                {contextInfo ? (
+                    <span className={`text-[10px] ${contextInfo.color}`}>
+                        {contextInfo.text}
                     </span>
                 ) : null}
             </div>
