@@ -3,14 +3,14 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use crate::codex_app_server::sender_ex::ArcMutexSender;
 use crate::transport::AcpStdioTransport;
 use crate::types::{
-    AgentBackend, AgentSessionConfig, OnPermissionRequestFn, OnUpdateFn, PermissionRequest,
-    PermissionResponse, PromptContent,
+    AgentBackend, AgentSessionConfig, OnPermissionRequestFn, OnUpdateFn, PermissionOption,
+    PermissionRequest, PermissionResponse, PromptContent,
 };
+use arc_swap::ArcSwap;
 use serde_json::Value;
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{Mutex, mpsc, oneshot};
 use tracing::debug;
 
 use super::message_handler::CodexMessageHandler;
@@ -33,10 +33,11 @@ pub struct CodexAppServerBackend {
     args: Vec<String>,
     env: Option<HashMap<String, String>>,
     transport: Mutex<Option<Arc<AcpStdioTransport>>>,
-    permission_handler: Mutex<Option<OnPermissionRequestFn>>,
+    permission_handler: Arc<ArcSwap<Option<OnPermissionRequestFn>>>,
     pending_permissions: Arc<Mutex<HashMap<String, PendingPermission>>>,
     active_thread_id: Mutex<Option<String>>,
-    notification_tx: ArcMutexSender<(String, Value)>,
+    active_turn_id: Mutex<Option<String>>,
+    notification_tx: Arc<ArcSwap<Option<mpsc::UnboundedSender<(String, Value)>>>>,
 }
 
 impl CodexAppServerBackend {
@@ -46,10 +47,11 @@ impl CodexAppServerBackend {
             args,
             env,
             transport: Mutex::new(None),
-            permission_handler: Mutex::new(None),
+            permission_handler: Arc::new(ArcSwap::from_pointee(None)),
             pending_permissions: Arc::new(Mutex::new(HashMap::new())),
             active_thread_id: Mutex::new(None),
-            notification_tx: ArcMutexSender::new(),
+            active_turn_id: Mutex::new(None),
+            notification_tx: Arc::new(ArcSwap::from_pointee(None)),
         }
     }
 }
@@ -67,18 +69,22 @@ impl AgentBackend for CodexAppServerBackend {
             let notif_tx = self.notification_tx.clone();
             transport
                 .on_notification(move |method, params| {
-                    notif_tx.send((method, params));
+                    if let Some(tx) = notif_tx.load().as_ref() {
+                        let _ = tx.send((method, params));
+                    }
                 })
                 .await;
 
             *self.transport.lock().await = Some(transport.clone());
 
             let pending_cmd = self.pending_permissions.clone();
+            let handler_cmd = self.permission_handler.clone();
             transport
                 .register_request_handler(
                     "item/commandExecution/requestApproval",
                     Arc::new(move |params: Value, _id: Value| {
                         let pending = pending_cmd.clone();
+                        let handler = handler_cmd.clone();
                         Box::pin(async move {
                             let id = params
                                 .as_object()
@@ -87,20 +93,70 @@ impl AgentBackend for CodexAppServerBackend {
                                 .unwrap_or("tool-unknown")
                                 .to_string();
 
+                            let command = params
+                                .as_object()
+                                .and_then(|o| o.get("command"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+
+                            let thread_id = params
+                                .as_object()
+                                .and_then(|o| o.get("threadId"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+
                             let (tx, rx) = oneshot::channel();
-                            pending.lock().await.insert(id, PendingPermission { tx });
-                            rx.await.unwrap_or_else(|_| serde_json::json!("decline"))
+                            pending
+                                .lock()
+                                .await
+                                .insert(id.clone(), PendingPermission { tx });
+
+                            if let Some(h) = handler.load().as_ref() {
+                                h(PermissionRequest {
+                                    id: id.clone(),
+                                    session_id: thread_id,
+                                    tool_call_id: id.clone(),
+                                    title: Some(command),
+                                    kind: Some("commandExecution".to_string()),
+                                    raw_input: Some(params),
+                                    raw_output: None,
+                                    options: vec![
+                                        PermissionOption {
+                                            option_id: "accept".to_string(),
+                                            name: "Allow".to_string(),
+                                            kind: "allow".to_string(),
+                                        },
+                                        PermissionOption {
+                                            option_id: "accept_session".to_string(),
+                                            name: "Allow for session".to_string(),
+                                            kind: "allow".to_string(),
+                                        },
+                                        PermissionOption {
+                                            option_id: "deny".to_string(),
+                                            name: "Deny".to_string(),
+                                            kind: "deny".to_string(),
+                                        },
+                                    ],
+                                });
+                            }
+
+                            rx.await
+                                .unwrap_or_else(|_| serde_json::json!({"decision": "decline"}))
                         })
                     }),
                 )
                 .await;
 
             let pending_file = self.pending_permissions.clone();
+            let handler_file = self.permission_handler.clone();
             transport
                 .register_request_handler(
                     "item/fileChange/requestApproval",
                     Arc::new(move |params: Value, _id: Value| {
                         let pending = pending_file.clone();
+                        let handler = handler_file.clone();
                         Box::pin(async move {
                             let id = params
                                 .as_object()
@@ -109,9 +165,57 @@ impl AgentBackend for CodexAppServerBackend {
                                 .unwrap_or("tool-unknown")
                                 .to_string();
 
+                            let reason = params
+                                .as_object()
+                                .and_then(|o| o.get("reason"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+
+                            let thread_id = params
+                                .as_object()
+                                .and_then(|o| o.get("threadId"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+
                             let (tx, rx) = oneshot::channel();
-                            pending.lock().await.insert(id, PendingPermission { tx });
-                            rx.await.unwrap_or_else(|_| serde_json::json!("decline"))
+                            pending
+                                .lock()
+                                .await
+                                .insert(id.clone(), PendingPermission { tx });
+
+                            if let Some(h) = handler.load().as_ref() {
+                                h(PermissionRequest {
+                                    id: id.clone(),
+                                    session_id: thread_id,
+                                    tool_call_id: id.clone(),
+                                    title: Some(reason),
+                                    kind: Some("fileChange".to_string()),
+                                    raw_input: Some(params),
+                                    raw_output: None,
+                                    options: vec![
+                                        PermissionOption {
+                                            option_id: "accept".to_string(),
+                                            name: "Allow".to_string(),
+                                            kind: "allow".to_string(),
+                                        },
+                                        PermissionOption {
+                                            option_id: "accept_session".to_string(),
+                                            name: "Allow for session".to_string(),
+                                            kind: "allow".to_string(),
+                                        },
+                                        PermissionOption {
+                                            option_id: "deny".to_string(),
+                                            name: "Deny".to_string(),
+                                            kind: "deny".to_string(),
+                                        },
+                                    ],
+                                });
+                            }
+
+                            rx.await
+                                .unwrap_or_else(|_| serde_json::json!({"decision": "decline"}))
                         })
                     }),
                 )
@@ -124,6 +228,7 @@ impl AgentBackend for CodexAppServerBackend {
                         "protocolVersion": "2025-03-26",
                         "clientInfo": {
                             "name": "hapir",
+                            "title": "HAPIR",
                             "version": env!("CARGO_PKG_VERSION")
                         },
                         "capabilities": {}
@@ -202,7 +307,7 @@ impl AgentBackend for CodexAppServerBackend {
 
             // Create per-prompt channels
             let (ntx, mut nrx) = mpsc::unbounded_channel::<(String, Value)>();
-            self.notification_tx.set(Some(ntx));
+            self.notification_tx.store(Arc::new(Some(ntx)));
 
             let input: Vec<Value> = content
                 .iter()
@@ -244,17 +349,27 @@ impl AgentBackend for CodexAppServerBackend {
                 )
                 .await;
 
-            if let Err(e) = rpc_result {
-                process_handle.abort();
-                self.notification_tx.set(None);
-                return Err(anyhow::anyhow!(e));
+            match rpc_result {
+                Ok(resp) => {
+                    let turn_id = resp
+                        .get("turn")
+                        .and_then(|t| t.get("id"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    *self.active_turn_id.lock().await = turn_id;
+                }
+                Err(e) => {
+                    process_handle.abort();
+                    self.notification_tx.store(Arc::new(None));
+                    return Err(anyhow::anyhow!(e));
+                }
             }
 
             // Turn accepted, wait for turn/completed via notification processor
             let _ = process_handle.await;
 
             // Close channels
-            self.notification_tx.set(None);
+            self.notification_tx.store(Arc::new(None));
 
             Ok(())
         })
@@ -267,11 +382,12 @@ impl AgentBackend for CodexAppServerBackend {
         let session_id = session_id.to_string();
         Box::pin(async move {
             if let Some(transport) = self.transport.lock().await.as_ref() {
+                let mut params = serde_json::json!({"threadId": session_id});
+                if let Some(turn_id) = self.active_turn_id.lock().await.as_ref() {
+                    params["turnId"] = serde_json::json!(turn_id);
+                }
                 let _ = transport
-                    .send_request_default(
-                        "turn/interrupt",
-                        serde_json::json!({"threadId": session_id}),
-                    )
+                    .send_request_default("turn/interrupt", params)
                     .await;
             }
             Ok(())
@@ -290,15 +406,17 @@ impl AgentBackend for CodexAppServerBackend {
             if let Some(p) = pending {
                 let result = match response {
                     PermissionResponse::Selected { ref option_id } if option_id == "deny" => {
-                        serde_json::json!("decline")
+                        serde_json::json!({"decision": "decline"})
                     }
                     PermissionResponse::Selected { ref option_id }
                         if option_id == "accept_session" =>
                     {
-                        serde_json::json!("acceptForSession")
+                        serde_json::json!({"decision": "accept", "acceptSettings": {"forSession": true}})
                     }
-                    PermissionResponse::Selected { .. } => serde_json::json!("accept"),
-                    _ => serde_json::json!("decline"),
+                    PermissionResponse::Selected { .. } => {
+                        serde_json::json!({"decision": "accept"})
+                    }
+                    _ => serde_json::json!({"decision": "decline"}),
                 };
                 let _ = p.tx.send(result);
             } else {
@@ -312,8 +430,7 @@ impl AgentBackend for CodexAppServerBackend {
     }
 
     fn on_permission_request(&self, handler: OnPermissionRequestFn) {
-        let mut h = self.permission_handler.blocking_lock();
-        *h = Some(handler);
+        self.permission_handler.store(Arc::new(Some(handler)));
     }
 
     fn disconnect(&self) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + '_>> {

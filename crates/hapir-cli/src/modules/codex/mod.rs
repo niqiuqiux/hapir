@@ -307,6 +307,129 @@ pub async fn run(
         })
         .await;
 
+    // Set up permission request callback to push requests to agentState
+    let ws_for_perm = ws_client.clone();
+    backend.on_permission_request(Box::new(move |req: hapir_acp::types::PermissionRequest| {
+        let ws = ws_for_perm.clone();
+        let tool_name = req.kind.clone().unwrap_or_default();
+        let arguments = req.raw_input.clone().unwrap_or(serde_json::json!({}));
+        let key = req.id.clone();
+        let requested_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as f64;
+
+        tokio::spawn(async move {
+            let _ = ws
+                .update_agent_state(move |mut state| {
+                    if let Some(obj) = state.as_object_mut() {
+                        let requests = obj
+                            .entry("requests")
+                            .or_insert_with(|| serde_json::json!({}));
+                        if let Some(req_map) = requests.as_object_mut() {
+                            req_map.insert(
+                                key,
+                                serde_json::json!({
+                                    "tool": tool_name,
+                                    "arguments": arguments,
+                                    "createdAt": requested_at,
+                                }),
+                            );
+                        }
+                    }
+                    state
+                })
+                .await;
+        });
+    }));
+
+    // Register permission RPC handler for frontend approve/deny
+    let backend_for_perm = backend.clone();
+    let sb_for_perm = session_base.clone();
+    ws_client
+        .register_rpc("permission", move |params| {
+            let b = backend_for_perm.clone();
+            let sb = sb_for_perm.clone();
+            Box::pin(async move {
+                debug!("[runCodex] permission RPC received: {:?}", params);
+
+                let id = params
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let approved = params
+                    .get("approved")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+
+                let option_id = if approved { "accept" } else { "deny" };
+                let perm_req = hapir_acp::types::PermissionRequest {
+                    id: id.clone(),
+                    session_id: String::new(),
+                    tool_call_id: id.clone(),
+                    title: None,
+                    kind: None,
+                    raw_input: None,
+                    raw_output: None,
+                    options: vec![],
+                };
+                let perm_resp = hapir_acp::types::PermissionResponse::Selected {
+                    option_id: option_id.to_string(),
+                };
+
+                if let Some(sid) = sb.session_id.lock().await.clone() {
+                    let _ = b.respond_to_permission(&sid, &perm_req, perm_resp).await;
+                } else {
+                    let _ = b.respond_to_permission("", &perm_req, hapir_acp::types::PermissionResponse::Selected { option_id: option_id.to_string() }).await;
+                }
+
+                // Move from requests to completedRequests in agentState
+                let id_for_state = id.clone();
+                let status = if approved { "approved" } else { "denied" };
+                let completed_at = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as f64;
+
+                let _ = sb
+                    .ws_client
+                    .update_agent_state(move |mut state| {
+                        if let Some(requests) =
+                            state.get_mut("requests").and_then(|v| v.as_object_mut())
+                        {
+                            if let Some(request) = requests.remove(&id_for_state) {
+                                if state.get("completedRequests").is_none() {
+                                    state["completedRequests"] = serde_json::json!({});
+                                }
+                                if let Some(completed_map) = state
+                                    .get_mut("completedRequests")
+                                    .and_then(|v| v.as_object_mut())
+                                {
+                                    let mut entry: serde_json::Map<String, serde_json::Value> =
+                                        request.as_object().cloned().unwrap_or_default();
+                                    entry.insert(
+                                        "status".to_string(),
+                                        serde_json::json!(status),
+                                    );
+                                    entry.insert(
+                                        "completedAt".to_string(),
+                                        serde_json::json!(completed_at),
+                                    );
+                                    completed_map
+                                        .insert(id_for_state, serde_json::json!(entry));
+                                }
+                            }
+                        }
+                        state
+                    })
+                    .await;
+
+                serde_json::json!({"ok": true})
+            })
+        })
+        .await;
+
     let terminal_mgr =
         crate::terminal::setup_terminal(&ws_client, &session_id, &working_directory).await;
 
