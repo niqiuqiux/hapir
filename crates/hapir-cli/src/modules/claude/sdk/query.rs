@@ -191,14 +191,15 @@ fn spawn_stdout_reader(
             if trimmed.is_empty() {
                 continue;
             }
+            debug!("[claude-sdk-raw] {}", trimmed);
             match serde_json::from_str::<SdkMessage>(trimmed) {
                 Ok(msg) => {
                     if tx.send(msg).is_err() {
                         break;
                     }
                 }
-                Err(_) => {
-                    debug!("Failed to parse SDK message: {}", trimmed);
+                Err(e) => {
+                    debug!("Failed to parse SDK message: {} -- {}", e, trimmed);
                 }
             }
         }

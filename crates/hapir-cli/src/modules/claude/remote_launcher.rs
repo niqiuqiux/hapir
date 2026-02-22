@@ -54,6 +54,11 @@ pub async fn claude_remote_launcher(session: &Arc<ClaudeSession<EnhancedMode>>) 
     let mut streaming_message_id: Option<String> = None;
     let mut accumulated_text = String::new();
 
+    // Track the last assistant message per turn so we can send a final
+    // complete message (with thinking blocks + usage) when Result arrives.
+    let mut last_assistant_content: Option<Vec<Value>> = None;
+    let mut last_assistant_usage: Option<Value> = None;
+
     // Track tool_use blocks from assistant messages so we can resolve
     // the tool_use.id when a control_request arrives (the SDK's request_id
     // is different from the tool_use.id).
@@ -274,6 +279,12 @@ pub async fn claude_remote_launcher(session: &Arc<ClaudeSession<EnhancedMode>>) 
                         parent_tool_use_id
                     );
 
+                    // Always track latest content + usage for the final message
+                    last_assistant_content = Some(message.content.clone());
+                    if message.usage.is_some() {
+                        last_assistant_usage = message.usage.clone();
+                    }
+
                     // Track tool_use blocks for permission ID resolution
                     for block in &message.content {
                         if block.get("type").and_then(|v| v.as_str()) == Some("tool_use")
@@ -400,6 +411,7 @@ pub async fn claude_remote_launcher(session: &Arc<ClaudeSession<EnhancedMode>>) 
                     duration_ms,
                     is_error,
                     session_id: result_session_id,
+                    usage: result_usage,
                     ..
                 } => {
                     info!(
@@ -414,9 +426,30 @@ pub async fn claude_remote_launcher(session: &Arc<ClaudeSession<EnhancedMode>>) 
                             .ws_client
                             .send_message_delta(&mid, &accumulated_text, true)
                             .await;
+                        accumulated_text.clear();
+                    }
 
-                        // Send complete message for database storage
-                        if !accumulated_text.is_empty() {
+                    // Prefer Result usage (has cache_* fields), fall back to last assistant usage
+                    let final_usage = result_usage
+                        .and_then(|u| serde_json::to_value(u).ok())
+                        .or(last_assistant_usage.take());
+
+                    // Send the final complete message with full content + usage.
+                    // This includes thinking blocks that streaming deltas skipped.
+                    if let Some(content) = last_assistant_content.take() {
+                        let has_content = content
+                            .iter()
+                            .any(|b| b.get("type").and_then(|v| v.as_str()) != Some("thinking"));
+
+                        if has_content || !is_error {
+                            let mut msg_body = serde_json::json!({
+                                "role": "assistant",
+                                "content": content,
+                            });
+                            if let Some(usage) = &final_usage {
+                                msg_body["usage"] = usage.clone();
+                            }
+
                             session
                                 .base
                                 .ws_client
@@ -426,19 +459,12 @@ pub async fn claude_remote_launcher(session: &Arc<ClaudeSession<EnhancedMode>>) 
                                         "type": "output",
                                         "data": {
                                             "type": "assistant",
-                                            "message": {
-                                                "role": "assistant",
-                                                "content": [{
-                                                    "type": "text",
-                                                    "text": accumulated_text,
-                                                }]
-                                            }
+                                            "message": msg_body
                                         }
                                     }
                                 }))
                                 .await;
                         }
-                        accumulated_text.clear();
                     }
 
                     if is_error && let Some(ref error_text) = result {
@@ -471,6 +497,8 @@ pub async fn claude_remote_launcher(session: &Arc<ClaudeSession<EnhancedMode>>) 
                     // Clean up turn state
                     tracked_tool_calls.clear();
                     tool_use_to_request_id.clear();
+                    last_assistant_content = None;
+                    last_assistant_usage = None;
 
                     // Clear completedRequests from agent state so stale entries
                     // don't create phantom tool cards after page refresh.

@@ -68,6 +68,8 @@ pub struct SdkUserMessageBody {
 pub struct SdkAssistantMessageBody {
     pub role: String,
     pub content: Vec<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
