@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-
+use std::time::Duration;
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
@@ -48,7 +48,7 @@ impl WsSessionClient {
         }
     }
 
-    pub async fn connect(&self) {
+    pub async fn connect(&self, timeout: Duration) -> anyhow::Result<()> {
         let metadata = self.metadata.clone();
         let metadata_version = self.metadata_version.clone();
         let agent_state = self.agent_state.clone();
@@ -96,25 +96,37 @@ impl WsSessionClient {
             })
             .await;
 
-        // session-alive as connect message, sent after RPC re-registration
-        let time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as i64;
-        self.ws
-            .add_connect_message(
-                "session-alive",
-                json!({
-                    "sid": self.session_id,
-                    "time": time,
-                    "thinking": false,
-                    "mode": "local",
-                    "runtime": "",
-                }),
-            )
-            .await;
+        // Send session-alive on every (re)connect with fresh timestamp
+        {
+            let ws = self.ws.clone();
+            let sid = self.session_id.clone();
+            self.ws
+                .on_connect(move || {
+                    let ws = ws.clone();
+                    let sid = sid.clone();
+                    tokio::spawn(async move {
+                        let time = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as i64;
+                        ws.emit(
+                            "session-alive",
+                            json!({
+                                "sid": sid,
+                                "time": time,
+                                "thinking": false,
+                                "mode": "local",
+                                "runtime": "",
+                            }),
+                        )
+                        .await;
+                    });
+                })
+                .await;
+        }
 
-        self.ws.connect().await;
+        self.ws.connect(timeout).await?;
+        Ok(())
     }
 
     pub async fn keep_alive(

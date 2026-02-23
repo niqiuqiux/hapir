@@ -50,9 +50,7 @@ pub struct WsClient {
     connected_notify: Arc<Notify>,
     shutdown: Arc<Notify>,
     shutdown_flag: Arc<AtomicBool>,
-    has_connected_once: Arc<AtomicBool>,
     last_activity: Arc<AtomicU64>,
-    connect_messages: Arc<Mutex<Vec<String>>>,
     on_connect: Arc<Mutex<Option<ConnectionCallback>>>,
     on_disconnect: Arc<Mutex<Option<ConnectionCallback>>>,
 }
@@ -70,11 +68,330 @@ impl WsClient {
             connected_notify: Arc::new(Notify::new()),
             shutdown: Arc::new(Notify::new()),
             shutdown_flag: Arc::new(AtomicBool::new(false)),
-            has_connected_once: Arc::new(AtomicBool::new(false)),
             last_activity: Arc::new(AtomicU64::new(0)),
-            connect_messages: Arc::new(Mutex::new(Vec::new())),
             on_connect: Arc::new(Mutex::new(None)),
             on_disconnect: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    async fn set_state(state: &RwLock<ConnectionState>, new_state: ConnectionState) {
+        *state.write().await = new_state;
+    }
+
+    fn build_ws_url(config: &WsClientConfig) -> String {
+        format!(
+            "{}/ws/cli?token={}&clientType={}&scopeId={}",
+            config
+                .url
+                .replace("http://", "ws://")
+                .replace("https://", "wss://"),
+            urlencoding::encode(&config.auth_token),
+            urlencoding::encode(&config.client_type),
+            urlencoding::encode(&config.scope_id),
+        )
+    }
+
+    async fn flush_outbox(
+        outbox: &Mutex<SocketOutbox>,
+        tx: &mpsc::UnboundedSender<Message>,
+    ) {
+        let mut ob = outbox.lock().await;
+        for msg in ob.drain() {
+            let _ = tx.send(Message::Text(msg.into()));
+        }
+    }
+
+    async fn reregister_rpc(
+        handlers: &RwLock<HashMap<String, RpcHandler>>,
+        tx: &mpsc::UnboundedSender<Message>,
+    ) {
+        let handlers = handlers.read().await;
+        for method in handlers.keys() {
+            let req = WsRequest::fire("rpc-register", serde_json::json!({"method": method}));
+            if let Ok(json) = serde_json::to_string(&req) {
+                let _ = tx.send(Message::Text(json.into()));
+            }
+        }
+        if !handlers.is_empty() {
+            info!(count = handlers.len(), "re-registered RPC handlers on connect");
+        }
+    }
+
+    async fn cleanup(
+        state: &RwLock<ConnectionState>,
+        tx: &Mutex<Option<mpsc::UnboundedSender<Message>>>,
+        acks: &Mutex<HashMap<String, oneshot::Sender<Value>>>,
+    ) {
+        Self::set_state(state, ConnectionState::Disconnected).await;
+        *tx.lock().await = None;
+        acks.lock().await.clear();
+    }
+
+    async fn write_loop(
+        mut rx: mpsc::UnboundedReceiver<Message>,
+        mut sink: futures::stream::SplitSink<
+            tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+            Message,
+        >,
+        shutdown: &AtomicBool,
+    ) {
+        while let Some(msg) = rx.recv().await {
+            if shutdown.load(Ordering::Relaxed) {
+                break;
+            }
+            if sink.send(msg).await.is_err() {
+                break;
+            }
+        }
+    }
+
+    async fn ping_loop(tx: &mpsc::UnboundedSender<Message>, shutdown: &AtomicBool) {
+        let mut interval = time::interval(PING_INTERVAL);
+        interval.tick().await;
+        loop {
+            interval.tick().await;
+            if shutdown.load(Ordering::Relaxed) {
+                break;
+            }
+            if tx.send(Message::Ping(vec![].into())).is_err() {
+                break;
+            }
+        }
+    }
+
+    async fn watchdog_loop(activity: &AtomicU64, shutdown: &AtomicBool) {
+        let dead_timeout = PING_INTERVAL + PONG_TIMEOUT;
+        let mut interval = time::interval(Duration::from_secs(5));
+        loop {
+            interval.tick().await;
+            if shutdown.load(Ordering::Relaxed) {
+                break;
+            }
+            let last = activity.load(Ordering::Relaxed);
+            let now = epoch_ms();
+            if now.saturating_sub(last) > dead_timeout.as_millis() as u64 {
+                warn!(
+                    "no activity for {}s, connection presumed dead",
+                    dead_timeout.as_secs()
+                );
+                break;
+            }
+        }
+    }
+
+    async fn read_loop(
+        mut stream: futures::stream::SplitStream<
+            tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+        >,
+        pending: &Mutex<HashMap<String, oneshot::Sender<Value>>>,
+        events: &RwLock<HashMap<String, EventHandler>>,
+        rpcs: &RwLock<HashMap<String, RpcHandler>>,
+        tx: &mpsc::UnboundedSender<Message>,
+        shutdown: &AtomicBool,
+        activity: &AtomicU64,
+    ) {
+        while let Some(msg) = stream.next().await {
+            if shutdown.load(Ordering::Relaxed) {
+                break;
+            }
+            activity.store(epoch_ms(), Ordering::Relaxed);
+
+            match msg {
+                Ok(Message::Text(text)) => {
+                    let text_str: &str = &text;
+                    let Ok(ws_msg) = serde_json::from_str::<WsMessage>(text_str) else {
+                        continue;
+                    };
+
+                    if let Some(ref id) = ws_msg.id
+                        && ws_msg.event.ends_with(":ack")
+                        && let Some(sender) = pending.lock().await.remove(id)
+                    {
+                        let _ = sender.send(ws_msg.data);
+                        continue;
+                    }
+
+                    if ws_msg.event == "rpc-request"
+                        && let Some(ref id) = ws_msg.id
+                    {
+                        Self::dispatch_rpc(ws_msg.data, id, rpcs, tx).await;
+                        continue;
+                    }
+
+                    if let Some(handler) = events.read().await.get(&ws_msg.event) {
+                        handler(ws_msg.data);
+                    }
+                }
+                Ok(Message::Pong(_)) => {}
+                Ok(Message::Close(_)) => break,
+                Err(e) => {
+                    warn!(error = %e, "WebSocket read error");
+                    break;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    async fn dispatch_rpc(
+        data: Value,
+        id: &str,
+        rpcs: &RwLock<HashMap<String, RpcHandler>>,
+        tx: &mpsc::UnboundedSender<Message>,
+    ) {
+        let method = data.get("method").and_then(|v| v.as_str()).unwrap_or("");
+        let params_raw = data.get("params").cloned().unwrap_or(Value::Null);
+        // Hub sends params as JSON-encoded string
+        let params = match params_raw {
+            Value::String(ref s) => serde_json::from_str(s).unwrap_or(params_raw),
+            other => other,
+        };
+
+        if let Some(handler) = rpcs.read().await.get(method).cloned() {
+            debug!(method, "RPC request received, dispatching to handler");
+            let id = id.to_string();
+            let tx = tx.clone();
+            tokio::spawn(async move {
+                let result = handler(params).await;
+                let ack = WsRequest {
+                    id: Some(id),
+                    event: "rpc-request:ack".into(),
+                    data: result,
+                };
+                if let Ok(json) = serde_json::to_string(&ack) {
+                    let _ = tx.send(Message::Text(json.into()));
+                }
+            });
+        }
+    }
+
+    async fn connect_internal(&self) {
+        let config = self.config.clone();
+        let state = self.state.clone();
+        let tx_holder = self.tx.clone();
+        let pending_acks = self.pending_acks.clone();
+        let event_handlers = self.event_handlers.clone();
+        let rpc_handlers = self.rpc_handlers.clone();
+        let outbox = self.outbox.clone();
+        let connected_notify = self.connected_notify.clone();
+        let shutdown = self.shutdown.clone();
+        let shutdown_flag = self.shutdown_flag.clone();
+        let last_activity = self.last_activity.clone();
+        let on_connect = self.on_connect.clone();
+        let on_disconnect = self.on_disconnect.clone();
+
+        tokio::spawn(async move {
+            let mut backoff = Duration::from_secs(1);
+            let max_backoff = Duration::from_secs(5);
+            let mut attempts: usize = 0;
+
+            loop {
+                if shutdown_flag.load(Ordering::Relaxed) {
+                    break;
+                }
+
+                if let Some(max) = config.max_reconnect_attempts
+                    && attempts >= max
+                {
+                    warn!(attempts, "max reconnection attempts reached, giving up");
+                    break;
+                }
+                attempts += 1;
+
+                Self::set_state(&state, ConnectionState::Connecting).await;
+
+                let ws_url = Self::build_ws_url(&config);
+                debug!(url = %ws_url, attempt = attempts, "connecting to WebSocket");
+
+                let connect_result =
+                    time::timeout(CONNECT_TIMEOUT, tokio_tungstenite::connect_async(&ws_url)).await;
+
+                let ws_stream = match connect_result {
+                    Ok(Ok((stream, _))) => stream,
+                    Ok(Err(e)) => {
+                        warn!(attempt = attempts, error = %e, "WebSocket connection failed, will retry");
+                        Self::wait_backoff(&shutdown_flag, &shutdown, &mut backoff, max_backoff)
+                            .await;
+                        continue;
+                    }
+                    Err(_) => {
+                        warn!(
+                            attempt = attempts,
+                            "WebSocket connect timed out ({}s), will retry",
+                            CONNECT_TIMEOUT.as_secs()
+                        );
+                        Self::wait_backoff(&shutdown_flag, &shutdown, &mut backoff, max_backoff)
+                            .await;
+                        continue;
+                    }
+                };
+
+                info!(scope_id = %config.scope_id, "WebSocket connected");
+                Self::set_state(&state, ConnectionState::Connected).await;
+                backoff = Duration::from_secs(1);
+                attempts = 0;
+
+                last_activity.store(epoch_ms(), Ordering::Relaxed);
+
+                let (write, read) = ws_stream.split();
+                let (send_tx, send_rx) = mpsc::unbounded_channel::<Message>();
+
+                // Hold tx lock while flushing outbox and re-registering,
+                // prevents race with emit() enqueueing to already-flushed outbox.
+                {
+                    let mut tx_guard = tx_holder.lock().await;
+                    *tx_guard = Some(send_tx.clone());
+                    Self::flush_outbox(&outbox, &send_tx).await;
+                    Self::reregister_rpc(&rpc_handlers, &send_tx).await;
+                }
+
+                if let Some(ref cb) = *on_connect.lock().await {
+                    cb();
+                }
+                connected_notify.notify_waiters();
+
+                tokio::select! {
+                    _ = Self::write_loop(send_rx, write, &shutdown_flag) => {},
+                    _ = Self::read_loop(read, &pending_acks, &event_handlers, &rpc_handlers, &send_tx, &shutdown_flag, &last_activity) => {},
+                    _ = Self::ping_loop(&send_tx, &shutdown_flag) => {},
+                    _ = Self::watchdog_loop(&last_activity, &shutdown_flag) => {},
+                    _ = shutdown.notified() => {
+                        Self::cleanup(&state, &tx_holder, &pending_acks).await;
+                        return;
+                    }
+                }
+
+                Self::cleanup(&state, &tx_holder, &pending_acks).await;
+                info!(scope_id = %config.scope_id, "WebSocket disconnected, scheduling reconnect");
+
+                if let Some(ref cb) = *on_disconnect.lock().await {
+                    cb();
+                }
+
+                Self::wait_backoff(&shutdown_flag, &shutdown, &mut backoff, max_backoff).await;
+            }
+        });
+    }
+
+    pub async fn is_connected(&self) -> bool {
+        *self.state.read().await == ConnectionState::Connected
+    }
+
+    async fn wait_connected(&self, timeout: Duration) -> bool {
+        if self.is_connected().await {
+            return true;
+        }
+        tokio::time::timeout(timeout, self.connected_notify.notified())
+            .await
+            .is_ok()
+    }
+
+    pub async fn connect(&self, timeout: Duration) -> anyhow::Result<()> {
+        self.connect_internal().await;
+        if self.wait_connected(timeout).await {
+            Ok(())
+        } else {
+            anyhow::bail!("failed to connect within {}s", timeout.as_secs())
         }
     }
 
@@ -100,13 +417,6 @@ impl WsClient {
             .insert(method.into(), Arc::new(handler));
     }
 
-    pub async fn add_connect_message(&self, event: impl Into<String>, data: Value) {
-        let req = WsRequest::fire(event, data);
-        if let Ok(json) = serde_json::to_string(&req) {
-            self.connect_messages.lock().await.push(json);
-        }
-    }
-
     #[allow(dead_code)]
     pub async fn on_connect(&self, f: impl Fn() + Send + Sync + 'static) {
         *self.on_connect.lock().await = Some(Box::new(f));
@@ -125,7 +435,7 @@ impl WsClient {
         };
 
         // Hold tx lock to prevent race with outbox flush
-    let tx_guard = self.tx.lock().await;
+        let tx_guard = self.tx.lock().await;
         if let Some(tx) = tx_guard.as_ref() {
             let _ = tx.send(Message::Text(json.into()));
         } else {
@@ -162,308 +472,6 @@ impl WsClient {
         }
     }
 
-    pub async fn connect(&self) {
-        let config = self.config.clone();
-        let state = self.state.clone();
-        let tx_holder = self.tx.clone();
-        let pending_acks = self.pending_acks.clone();
-        let event_handlers = self.event_handlers.clone();
-        let rpc_handlers = self.rpc_handlers.clone();
-        let outbox = self.outbox.clone();
-        let connected_notify = self.connected_notify.clone();
-        let shutdown = self.shutdown.clone();
-        let shutdown_flag = self.shutdown_flag.clone();
-        let has_connected_once = self.has_connected_once.clone();
-        let last_activity = self.last_activity.clone();
-        let on_connect = self.on_connect.clone();
-        let on_disconnect = self.on_disconnect.clone();
-        let connect_messages = self.connect_messages.clone();
-
-        tokio::spawn(async move {
-            let mut backoff = Duration::from_secs(1);
-            let max_backoff = Duration::from_secs(5);
-            let mut attempts: usize = 0;
-
-            loop {
-                if shutdown_flag.load(Ordering::Relaxed) {
-                    break;
-                }
-
-                // Check reconnect limit
-                if let Some(max) = config.max_reconnect_attempts
-                    && attempts >= max
-                {
-                    warn!(attempts, "max reconnection attempts reached, giving up");
-                    break;
-                }
-                attempts += 1;
-
-                *state.write().await = ConnectionState::Connecting;
-
-                let ws_url = format!(
-                    "{}/ws/cli?token={}&clientType={}&scopeId={}",
-                    config
-                        .url
-                        .replace("http://", "ws://")
-                        .replace("https://", "wss://"),
-                    urlencoding::encode(&config.auth_token),
-                    urlencoding::encode(&config.client_type),
-                    urlencoding::encode(&config.scope_id),
-                );
-
-                debug!(url = %ws_url, attempt = attempts, "connecting to WebSocket");
-
-                // Connect with timeout
-                let connect_result =
-                    time::timeout(CONNECT_TIMEOUT, tokio_tungstenite::connect_async(&ws_url)).await;
-
-                let ws_stream = match connect_result {
-                    Ok(Ok((stream, _))) => stream,
-                    Ok(Err(e)) => {
-                        warn!(attempt = attempts, error = %e, "WebSocket connection failed, will retry");
-                        Self::wait_backoff(&shutdown_flag, &shutdown, &mut backoff, max_backoff)
-                            .await;
-                        continue;
-                    }
-                    Err(_) => {
-                        warn!(
-                            attempt = attempts,
-                            "WebSocket connect timed out ({}s), will retry",
-                            CONNECT_TIMEOUT.as_secs()
-                        );
-                        Self::wait_backoff(&shutdown_flag, &shutdown, &mut backoff, max_backoff)
-                            .await;
-                        continue;
-                    }
-                };
-
-                info!(scope_id = %config.scope_id, "WebSocket connected");
-                *state.write().await = ConnectionState::Connected;
-                has_connected_once.store(true, Ordering::Relaxed);
-                backoff = Duration::from_secs(1);
-                attempts = 0; // reset on success
-
-                last_activity.store(epoch_ms(), Ordering::Relaxed);
-
-                let (mut write, mut read) = ws_stream.split();
-                let (send_tx, mut send_rx) = mpsc::unbounded_channel::<Message>();
-
-                // Hold tx lock while flushing outbox and re-registering,
-                // prevents race with emit() enqueueing to already-flushed outbox.
-                {
-                    let mut tx_guard = tx_holder.lock().await;
-                    *tx_guard = Some(send_tx.clone());
-
-                    {
-                        let mut ob = outbox.lock().await;
-                        for msg in ob.drain() {
-                            let _ = send_tx.send(Message::Text(msg.into()));
-                        }
-                    }
-
-                    {
-                        let handlers = rpc_handlers.read().await;
-                        for method in handlers.keys() {
-                            let req = WsRequest::fire(
-                                "rpc-register",
-                                serde_json::json!({"method": method}),
-                            );
-                            if let Ok(json) = serde_json::to_string(&req) {
-                                let _ = send_tx.send(Message::Text(json.into()));
-                            }
-                        }
-                        if !handlers.is_empty() {
-                            info!(
-                                count = handlers.len(),
-                                "re-registered RPC handlers on connect"
-                            );
-                        }
-                    }
-
-                    // Send connect messages after RPC registration
-                    {
-                        let msgs = connect_messages.lock().await;
-                        for msg in msgs.iter() {
-                            let _ = send_tx.send(Message::Text(msg.clone().into()));
-                        }
-                    }
-                }
-
-                if let Some(ref cb) = *on_connect.lock().await {
-                    cb();
-                }
-                connected_notify.notify_waiters();
-
-                // --- Write ---
-                let write_shutdown = shutdown_flag.clone();
-                let write_task = async {
-                    while let Some(msg) = send_rx.recv().await {
-                        if write_shutdown.load(Ordering::Relaxed) {
-                            break;
-                        }
-                        if write.send(msg).await.is_err() {
-                            break;
-                        }
-                    }
-                };
-
-                // --- Ping ---
-                let ping_tx = send_tx.clone();
-                let ping_shutdown = shutdown_flag.clone();
-                let ping_task = async {
-                    let mut interval = time::interval(PING_INTERVAL);
-                    interval.tick().await; // skip first immediate tick
-                    loop {
-                        interval.tick().await;
-                        if ping_shutdown.load(Ordering::Relaxed) {
-                            break;
-                        }
-                        if ping_tx.send(Message::Ping(vec![].into())).is_err() {
-                            break;
-                        }
-                    }
-                };
-
-                // --- Watchdog ---
-                let wd_activity = last_activity.clone();
-                let wd_shutdown = shutdown_flag.clone();
-                let dead_timeout = PING_INTERVAL + PONG_TIMEOUT; // 35s
-                let watchdog_task = async {
-                    let mut interval = time::interval(Duration::from_secs(5));
-                    loop {
-                        interval.tick().await;
-                        if wd_shutdown.load(Ordering::Relaxed) {
-                            break;
-                        }
-                        let last = wd_activity.load(Ordering::Relaxed);
-                        let now = epoch_ms();
-                        if now.saturating_sub(last) > dead_timeout.as_millis() as u64 {
-                            warn!(
-                                "no activity for {}s, connection presumed dead",
-                                dead_timeout.as_secs()
-                            );
-                            break;
-                        }
-                    }
-                };
-
-                // --- Read ---
-                let read_pending = pending_acks.clone();
-                let read_handlers = event_handlers.clone();
-                let read_rpcs = rpc_handlers.clone();
-                let read_tx = send_tx.clone();
-                let read_shutdown = shutdown_flag.clone();
-                let read_activity = last_activity.clone();
-                let read_task = async {
-                    while let Some(msg) = read.next().await {
-                        if read_shutdown.load(Ordering::Relaxed) {
-                            break;
-                        }
-                        read_activity.store(epoch_ms(), Ordering::Relaxed);
-
-                        match msg {
-                            Ok(Message::Text(text)) => {
-                                let text_str: &str = &text;
-                                if let Ok(ws_msg) = serde_json::from_str::<WsMessage>(text_str) {
-                                    if let Some(ref id) = ws_msg.id
-                                        && ws_msg.event.ends_with(":ack")
-                                        && let Some(sender) = read_pending.lock().await.remove(id)
-                                    {
-                                        let _ = sender.send(ws_msg.data);
-                                        continue;
-                                    }
-
-                                    if ws_msg.event == "rpc-request"
-                                        && let Some(ref id) = ws_msg.id
-                                    {
-                                        let method = ws_msg
-                                            .data
-                                            .get("method")
-                                            .and_then(|v| v.as_str())
-                                            .unwrap_or("");
-                                        let params_raw = ws_msg
-                                            .data
-                                            .get("params")
-                                            .cloned()
-                                            .unwrap_or(Value::Null);
-                                        // Hub sends params as JSON-encoded string
-                                        let params = match params_raw {
-                                            Value::String(ref s) => {
-                                                serde_json::from_str(s).unwrap_or(params_raw)
-                                            }
-                                            other => other,
-                                        };
-
-                                        if let Some(handler) =
-                                            read_rpcs.read().await.get(method).cloned()
-                                        {
-                                            debug!(
-                                                method,
-                                                "RPC request received, dispatching to handler"
-                                            );
-                                            let id = id.clone();
-                                            let tx = read_tx.clone();
-                                            tokio::spawn(async move {
-                                                let result = handler(params).await;
-                                                let ack = WsRequest {
-                                                    id: Some(id),
-                                                    event: "rpc-request:ack".into(),
-                                                    data: result,
-                                                };
-                                                if let Ok(json) = serde_json::to_string(&ack) {
-                                                    let _ = tx.send(Message::Text(json.into()));
-                                                }
-                                            });
-                                        }
-                                        continue;
-                                    }
-
-                                    if let Some(handler) =
-                                        read_handlers.read().await.get(&ws_msg.event)
-                                    {
-                                        handler(ws_msg.data);
-                                    }
-                                }
-                            }
-                            Ok(Message::Pong(_)) => {}
-                            Ok(Message::Close(_)) => break,
-                            Err(e) => {
-                                warn!(error = %e, "WebSocket read error");
-                                break;
-                            }
-                            _ => {}
-                        }
-                    }
-                };
-
-                tokio::select! {
-                    _ = write_task => {},
-                    _ = read_task => {},
-                    _ = ping_task => {},
-                    _ = watchdog_task => {},
-                    _ = shutdown.notified() => {
-                        *state.write().await = ConnectionState::Disconnected;
-                        *tx_holder.lock().await = None;
-                        pending_acks.lock().await.clear();
-                        return;
-                    }
-                }
-
-                *state.write().await = ConnectionState::Disconnected;
-                *tx_holder.lock().await = None;
-                pending_acks.lock().await.clear();
-
-                info!(scope_id = %config.scope_id, "WebSocket disconnected, scheduling reconnect");
-
-                if let Some(ref cb) = *on_disconnect.lock().await {
-                    cb();
-                }
-
-                Self::wait_backoff(&shutdown_flag, &shutdown, &mut backoff, max_backoff).await;
-            }
-        });
-    }
-
     async fn wait_backoff(
         shutdown_flag: &AtomicBool,
         shutdown: &Notify,
@@ -488,30 +496,5 @@ impl WsClient {
         self.shutdown_flag.store(true, Ordering::Relaxed);
         self.shutdown.notify_one();
         tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-
-    #[allow(dead_code)]
-    pub async fn is_connected(&self) -> bool {
-        *self.state.read().await == ConnectionState::Connected
-    }
-
-    #[allow(dead_code)]
-    pub async fn wait_connected(&self, timeout: Duration) -> bool {
-        if self.is_connected().await {
-            return true;
-        }
-        tokio::time::timeout(timeout, self.connected_notify.notified())
-            .await
-            .is_ok()
-    }
-
-    #[allow(dead_code)]
-    pub async fn connect_and_wait(&self, timeout: Duration) -> anyhow::Result<()> {
-        self.connect().await;
-        if self.wait_connected(timeout).await {
-            Ok(())
-        } else {
-            anyhow::bail!("failed to connect within {}s", timeout.as_secs())
-        }
     }
 }

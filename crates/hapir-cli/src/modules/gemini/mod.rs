@@ -1,5 +1,5 @@
 use std::sync::Arc;
-
+use std::time::Duration;
 use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
 use tracing::{debug, error, warn};
@@ -284,7 +284,7 @@ pub async fn run(working_directory: &str, runner_port: Option<u16>) -> anyhow::R
     let terminal_mgr =
         crate::terminal::setup_terminal(&ws_client, &session_id, &working_directory).await;
 
-    ws_client.connect().await;
+    ws_client.connect(Duration::from_secs(10)).await;
 
     let sb_for_local = session_base.clone();
     let sb_for_remote = session_base.clone();

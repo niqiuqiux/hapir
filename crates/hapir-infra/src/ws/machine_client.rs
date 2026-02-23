@@ -41,7 +41,7 @@ impl WsMachineClient {
         }
     }
 
-    pub async fn connect_and_wait(&self, timeout: Duration) -> anyhow::Result<()> {
+    pub async fn connect(&self, timeout: Duration) -> anyhow::Result<()> {
         let md = self.metadata.clone();
         let md_ver = self.metadata_version.clone();
         let rs = self.runner_state.clone();
@@ -129,7 +129,7 @@ impl WsMachineClient {
                 .await;
         }
 
-        self.ws.connect_and_wait(timeout).await?;
+        self.ws.connect(timeout).await?;
 
         // Keep-alive every 20s
         let ws = self.ws.clone();

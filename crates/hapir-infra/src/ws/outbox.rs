@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
+use tracing::warn;
 
 const MAX_BYTES: usize = 16 * 1024 * 1024; // 16MB
 const MAX_ITEMS: usize = 500;
@@ -26,7 +27,7 @@ impl SocketOutbox {
 
     pub fn enqueue(&mut self, _event: &str, data: &str) {
         if data.len() > MAX_ITEM_BYTES {
-            tracing::warn!(size = data.len(), "outbox item too large, dropping");
+            warn!(size = data.len(), "outbox item too large, dropping");
             return;
         }
 

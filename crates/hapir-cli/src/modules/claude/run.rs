@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
-
+use std::time::Duration;
 use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
@@ -483,7 +483,7 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
 
     // All RPC handlers registered — now connect the WebSocket.
     // This ensures the hub receives all rpc-register events before session-alive.
-    ws_client.connect().await;
+    ws_client.connect(Duration::from_secs(10)).await;
 
     // Create LoopOptions and enter the main loop
     let cs_for_local = claude_session.clone();

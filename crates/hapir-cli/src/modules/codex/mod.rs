@@ -491,7 +491,7 @@ pub async fn run(
     let terminal_mgr =
         crate::terminal::setup_terminal(&ws_client, &session_id, &working_directory).await;
 
-    ws_client.connect().await;
+    ws_client.connect(Duration::from_secs(10)).await;
 
     let sb_for_local = session_base.clone();
     let sb_for_remote = session_base.clone();

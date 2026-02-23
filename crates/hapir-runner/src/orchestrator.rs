@@ -436,7 +436,7 @@ async fn connect_to_hub(
         handlers::register_infra_handlers(ws.as_ref(), &cwd).await;
     }
 
-    ws.connect_and_wait(Duration::from_secs(10)).await?;
+    ws.connect(Duration::from_secs(10)).await?;
 
     let meta = build_machine_metadata(&config.home_dir);
     ws.update_metadata(|_| serde_json::to_value(&meta).unwrap_or(json!({})))
