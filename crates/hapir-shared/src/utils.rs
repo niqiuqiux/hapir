@@ -4,17 +4,23 @@ pub fn is_object(value: &Value) -> bool {
     value.is_object()
 }
 
-pub fn as_string(value: &Value) -> Option<&str> {
-    value.as_str()
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
 
-pub fn as_number(value: &Value) -> Option<f64> {
-    value.as_f64().filter(|n| n.is_finite())
-}
+    #[test]
+    fn is_object_returns_true_for_objects() {
+        assert!(is_object(&json!({"key": "value"})));
+        assert!(is_object(&json!({})));
+    }
 
-pub fn safe_stringify(value: &Value) -> String {
-    match value {
-        Value::String(s) => s.clone(),
-        other => serde_json::to_string_pretty(other).unwrap_or_else(|_| format!("{other}")),
+    #[test]
+    fn is_object_returns_false_for_non_objects() {
+        assert!(!is_object(&json!("string")));
+        assert!(!is_object(&json!(42)));
+        assert!(!is_object(&json!([1, 2])));
+        assert!(!is_object(&json!(null)));
+        assert!(!is_object(&json!(true)));
     }
 }

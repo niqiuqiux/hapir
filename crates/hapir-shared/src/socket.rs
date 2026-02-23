@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-// --- Socket Error ---
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SocketErrorReason {
@@ -10,8 +8,6 @@ pub enum SocketErrorReason {
     AccessDenied,
     NotFound,
 }
-
-// --- Terminal Payloads ---
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -78,8 +74,6 @@ pub struct TerminalErrorPayload {
     pub message: String,
 }
 
-// --- Update Payloads ---
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateMessage {
@@ -129,10 +123,7 @@ pub struct Update {
     pub created_at: f64,
 }
 
-// PLACEHOLDER_SOCKET_CONTINUE
-
-// --- Versioned Update Result (for ack callbacks) ---
-
+/// Discriminated union for versioned update ack responses.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "result")]
 pub enum VersionedUpdateResponse {
@@ -155,8 +146,6 @@ pub enum VersionedUpdateResponse {
     },
 }
 
-// --- Socket Error Event ---
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SocketError {
     pub message: String,
@@ -174,8 +163,6 @@ pub enum SocketErrorScope {
     Session,
     Machine,
 }
-
-// --- Tests ---
 
 #[cfg(test)]
 mod tests {
@@ -255,5 +242,55 @@ mod tests {
         assert!(json.contains("null"));
         let back: TerminalExitPayload = serde_json::from_str(&json).unwrap();
         assert_eq!(exit, back);
+    }
+
+    #[test]
+    fn versioned_update_response_success_roundtrip() {
+        let resp = VersionedUpdateResponse::Success {
+            version: 3.0,
+            fields: serde_json::json!({"extra": "data"}),
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        let back: VersionedUpdateResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(resp, back);
+    }
+
+    #[test]
+    fn versioned_update_response_mismatch_roundtrip() {
+        let resp = VersionedUpdateResponse::VersionMismatch {
+            version: 2.0,
+            fields: serde_json::json!({"current": true}),
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        let back: VersionedUpdateResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(resp, back);
+    }
+
+    #[test]
+    fn versioned_update_response_error_roundtrip() {
+        let resp = VersionedUpdateResponse::Error {
+            reason: Some(SocketErrorReason::AccessDenied),
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        let back: VersionedUpdateResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(resp, back);
+
+        let resp_none = VersionedUpdateResponse::Error { reason: None };
+        let json = serde_json::to_string(&resp_none).unwrap();
+        let back: VersionedUpdateResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(resp_none, back);
+    }
+
+    #[test]
+    fn socket_error_serde_roundtrip() {
+        let err = SocketError {
+            message: "not found".into(),
+            code: Some(SocketErrorReason::NotFound),
+            scope: Some(SocketErrorScope::Session),
+            id: Some("s1".into()),
+        };
+        let json = serde_json::to_string(&err).unwrap();
+        let back: SocketError = serde_json::from_str(&json).unwrap();
+        assert_eq!(err, back);
     }
 }

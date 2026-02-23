@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-// --- Permission Modes ---
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub enum PermissionMode {
@@ -71,8 +69,6 @@ pub struct PermissionModeOption {
     pub label: &'static str,
     pub tone: PermissionModeTone,
 }
-
-// --- Constants ---
 
 pub const CLAUDE_PERMISSION_MODES: &[PermissionMode] = &[
     PermissionMode::Default,
@@ -179,8 +175,6 @@ pub fn model_modes_for_flavor(flavor: Option<AgentFlavor>) -> &'static [ModelMod
 pub fn is_model_mode_allowed_for_flavor(mode: ModelMode, flavor: Option<AgentFlavor>) -> bool {
     model_modes_for_flavor(flavor).contains(&mode)
 }
-
-// --- Tests ---
 
 #[cfg(test)]
 mod tests {

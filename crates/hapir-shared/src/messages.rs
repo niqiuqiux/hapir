@@ -8,18 +8,6 @@ pub struct RoleWrappedRecord {
     pub meta: Option<Value>,
 }
 
-fn is_object(value: &Value) -> bool {
-    value.is_object()
-}
-
-pub fn is_role_wrapped_record(value: &Value) -> bool {
-    if let Some(obj) = value.as_object() {
-        obj.get("role").is_some_and(|r| r.is_string()) && obj.contains_key("content")
-    } else {
-        false
-    }
-}
-
 fn extract_role_wrapped(value: &Value) -> Option<RoleWrappedRecord> {
     let obj = value.as_object()?;
     let role = obj.get("role")?.as_str()?.to_string();
@@ -35,13 +23,8 @@ fn extract_role_wrapped(value: &Value) -> Option<RoleWrappedRecord> {
 /// Unwrap a role-wrapped record from various envelope formats.
 /// Checks: direct, .message, .data.message, .payload.message
 pub fn unwrap_role_wrapped_record_envelope(value: &Value) -> Option<RoleWrappedRecord> {
-    // Direct
     if let Some(r) = extract_role_wrapped(value) {
         return Some(r);
-    }
-
-    if !is_object(value) {
-        return None;
     }
 
     let obj = value.as_object()?;
