@@ -1,14 +1,17 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use sha2::{Digest, Sha256};
+use tokio::select;
 use tokio::sync::Mutex;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 use hapir_shared::schemas::StartedBy as SharedStartedBy;
 
 use crate::agent::local_launch_policy::{
     LocalLaunchContext, LocalLaunchExitReason, get_local_launch_exit_reason,
 };
+use crate::agent::local_sync::LocalSyncDriver;
 use crate::agent::loop_base::{LoopOptions, LoopResult, run_local_remote_session};
 use crate::agent::runner_lifecycle::{
     RunnerLifecycle, RunnerLifecycleOptions, create_mode_change_handler, set_controlled_by_user,
@@ -16,10 +19,17 @@ use crate::agent::runner_lifecycle::{
 use crate::agent::session_base::{AgentSessionBase, AgentSessionBaseOptions, SessionMode};
 use crate::agent::session_factory::{SessionBootstrapOptions, bootstrap_session};
 use hapir_acp::codex_app_server::backend::CodexAppServerBackend;
-use hapir_acp::types::{AgentBackend, AgentMessage, AgentSessionConfig, PromptContent};
+use hapir_acp::types::{
+    AgentBackend, AgentMessage, AgentSessionConfig, PermissionResponse, PromptContent,
+};
 use hapir_infra::config::Configuration;
 use hapir_infra::utils::message_queue::MessageQueue2;
+use hapir_infra::utils::terminal::{restore_terminal_state, save_terminal_state};
 use hapir_infra::ws::session_client::WsSessionClient;
+use hapir_runner::control_client::notify_session_started;
+
+mod session_scanner;
+use session_scanner::CodexSessionScanner;
 
 #[derive(Debug, Clone, Default)]
 pub struct CodexMode {
@@ -127,6 +137,8 @@ pub async fn run(
     resume: Option<&str>,
 ) -> anyhow::Result<()> {
     let working_directory = working_directory.to_string();
+
+    save_terminal_state();
     let started_by = match started_by {
         Some("runner") => SharedStartedBy::Runner,
         _ => SharedStartedBy::Terminal,
@@ -165,14 +177,14 @@ pub async fn run(
 
     if let Some(port) = runner_port {
         let pid = std::process::id();
-        if let Err(e) = hapir_runner::control_client::notify_session_started(
+        if let Err(e) = notify_session_started(
             port,
             &session_id,
             Some(serde_json::json!({ "hostPid": pid })),
         )
         .await
         {
-            tracing::warn!("[runCodex] Failed to notify runner of session start: {e}");
+            warn!("[runCodex] Failed to notify runner of session start: {e}");
         }
     }
 
@@ -229,11 +241,15 @@ pub async fn run(
     let mode_for_rpc = current_mode.clone();
     let pending_attachments: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let attachments_for_rpc = pending_attachments.clone();
+    let switch_for_msg = session_base.switch_notify.clone();
+    let session_mode_for_msg = session_base.mode.clone();
     ws_client
         .register_rpc("on-user-message", move |params| {
             let q = queue_for_rpc.clone();
             let mode = mode_for_rpc.clone();
             let att = attachments_for_rpc.clone();
+            let switch_notify = switch_for_msg.clone();
+            let session_mode = session_mode_for_msg.clone();
             Box::pin(async move {
                 let message = params
                     .get("message")
@@ -268,6 +284,15 @@ pub async fn run(
                     q.push(message, current).await;
                 }
 
+                // If in local mode, switch to remote so the queued message gets consumed
+                let is_local = *session_mode.lock().await == SessionMode::Local;
+                if is_local {
+                    info!(
+                        "[runCodex] Local mode: web message received, requesting switch to remote"
+                    );
+                    switch_notify.notify_one();
+                }
+
                 serde_json::json!({"ok": true})
             })
         })
@@ -287,6 +312,18 @@ pub async fn run(
                     debug!("[runCodex] Collaboration mode changed to: {}", cm);
                     m.collaboration_mode = Some(cm.to_string());
                 }
+                serde_json::json!({"ok": true})
+            })
+        })
+        .await;
+
+    let switch_for_rpc = session_base.switch_notify.clone();
+    ws_client
+        .register_rpc("switch", move |_params| {
+            let switch_notify = switch_for_rpc.clone();
+            Box::pin(async move {
+                info!("[runCodex] switch RPC received, requesting mode switch");
+                switch_notify.notify_one();
                 serde_json::json!({"ok": true})
             })
         })
@@ -391,14 +428,22 @@ pub async fn run(
                     raw_output: None,
                     options: vec![],
                 };
-                let perm_resp = hapir_acp::types::PermissionResponse::Selected {
+                let perm_resp = PermissionResponse::Selected {
                     option_id: option_id.to_string(),
                 };
 
                 if let Some(sid) = sb.session_id.lock().await.clone() {
                     let _ = b.respond_to_permission(&sid, &perm_req, perm_resp).await;
                 } else {
-                    let _ = b.respond_to_permission("", &perm_req, hapir_acp::types::PermissionResponse::Selected { option_id: option_id.to_string() }).await;
+                    let _ = b
+                        .respond_to_permission(
+                            "",
+                            &perm_req,
+                            PermissionResponse::Selected {
+                                option_id: option_id.to_string(),
+                            },
+                        )
+                        .await;
                 }
 
                 // Move from requests to completedRequests in agentState
@@ -425,16 +470,12 @@ pub async fn run(
                                 {
                                     let mut entry: serde_json::Map<String, serde_json::Value> =
                                         request.as_object().cloned().unwrap_or_default();
-                                    entry.insert(
-                                        "status".to_string(),
-                                        serde_json::json!(status),
-                                    );
+                                    entry.insert("status".to_string(), serde_json::json!(status));
                                     entry.insert(
                                         "completedAt".to_string(),
                                         serde_json::json!(completed_at),
                                     );
-                                    completed_map
-                                        .insert(id_for_state, serde_json::json!(entry));
+                                    completed_map.insert(id_for_state, serde_json::json!(entry));
                                 }
                             }
                         }
@@ -474,7 +515,7 @@ pub async fn run(
             Box::pin(async move { codex_remote_launcher(&sb, &b, resume.as_deref(), att).await })
         }),
         on_session_ready: None,
-        terminal_reclaim: false,
+        terminal_reclaim: started_by == SharedStartedBy::Terminal,
     })
     .await;
 
@@ -482,6 +523,8 @@ pub async fn run(
     let _ = backend.disconnect().await;
     terminal_mgr.close_all().await;
     lifecycle.cleanup().await;
+
+    restore_terminal_state();
 
     if let Err(e) = loop_result {
         error!("[runCodex] Loop error: {}", e);
@@ -495,18 +538,35 @@ async fn codex_local_launcher(session: &Arc<AgentSessionBase<CodexMode>>) -> Loo
     let working_directory = session.path.clone();
     debug!("[codexLocalLauncher] Starting in {}", working_directory);
 
-    // TODO: Implement local message sync for Codex
-    // - Create CodexSessionScanner that scans `~/.codex/sessions/{date}/{sessionId}.jsonl`
-    // - Wrap messages with `codex_message()` before sending
-    // - Use LocalSyncDriver::start(scanner, ws_client, Duration::from_secs(2), "codexLocalSync")
+    let session_ref = session.clone();
+    let scanner = CodexSessionScanner::new(
+        &working_directory,
+        session.session_id.lock().await.clone(),
+        Some(Box::new(move |sid: &str| {
+            let s = session_ref.clone();
+            let sid = sid.to_string();
+            tokio::spawn(async move {
+                s.on_session_found(&sid).await;
+            });
+        })),
+    );
+    let scanner = Arc::new(Mutex::new(scanner));
+
+    let mut sync_driver = LocalSyncDriver::start(
+        scanner.clone(),
+        session.ws_client.clone(),
+        Duration::from_secs(2),
+        "codexLocalSync",
+    );
 
     let mut cmd = tokio::process::Command::new("codex");
+    if let Some(ref sid) = *session.session_id.lock().await {
+        cmd.arg("resume").arg(sid);
+    }
     cmd.current_dir(&working_directory);
 
-    match cmd.status().await {
-        Ok(status) => {
-            debug!("[codexLocalLauncher] Codex process exited: {:?}", status);
-        }
+    let mut child = match cmd.spawn() {
+        Ok(child) => child,
         Err(e) => {
             warn!("[codexLocalLauncher] Failed to spawn codex: {}", e);
             session
@@ -516,7 +576,34 @@ async fn codex_local_launcher(session: &Arc<AgentSessionBase<CodexMode>>) -> Loo
                     "message": format!("Failed to launch codex CLI: {}", e),
                 }))
                 .await;
+            sync_driver.stop();
+            return LoopResult::Exit;
         }
+    };
+
+    let switched = select! {
+        status = child.wait() => {
+            match status {
+                Ok(s) => debug!("[codexLocalLauncher] Codex process exited: {:?}", s),
+                Err(e) => warn!("[codexLocalLauncher] Error waiting for codex: {}", e),
+            }
+            false
+        }
+        _ = session.switch_notify.notified() => {
+            info!("[codexLocalLauncher] Switch requested, killing codex process");
+            kill_child_gracefully(&mut child).await;
+            true
+        }
+    };
+
+    sync_driver.stop();
+    LocalSyncDriver::final_flush(&scanner, &session.ws_client, "codexLocalSync").await;
+
+    // Restore terminal after codex process exits (it may leave alternate screen / raw mode)
+    restore_terminal_state();
+
+    if switched {
+        return LoopResult::Switch;
     }
 
     let exit_reason = get_local_launch_exit_reason(&LocalLaunchContext {
@@ -568,7 +655,10 @@ async fn codex_remote_launcher(
 
     let thread_id = match resume_id {
         Some(ref prev_id) => {
-            debug!("[codexRemoteLauncher] Attempting to resume thread: {}", prev_id);
+            debug!(
+                "[codexRemoteLauncher] Attempting to resume thread: {}",
+                prev_id
+            );
             match backend.resume_session(prev_id).await {
                 Ok(tid) => {
                     debug!("[codexRemoteLauncher] Thread resumed: {}", tid);
@@ -576,7 +666,10 @@ async fn codex_remote_launcher(
                     tid
                 }
                 Err(e) => {
-                    warn!("[codexRemoteLauncher] Failed to resume thread {}: {}, starting new", prev_id, e);
+                    warn!(
+                        "[codexRemoteLauncher] Failed to resume thread {}: {}, starting new",
+                        prev_id, e
+                    );
                     match backend
                         .new_session(AgentSessionConfig {
                             cwd: working_directory.clone(),
@@ -631,11 +724,19 @@ async fn codex_remote_launcher(
     };
 
     loop {
-        let batch = match session.queue.wait_for_messages().await {
-            Some(batch) => batch,
-            None => {
-                debug!("[codexRemoteLauncher] Queue closed, exiting");
-                return LoopResult::Exit;
+        let batch = select! {
+            batch = session.queue.wait_for_messages() => {
+                match batch {
+                    Some(b) => b,
+                    None => {
+                        debug!("[codexRemoteLauncher] Queue closed, exiting");
+                        return LoopResult::Exit;
+                    }
+                }
+            }
+            _ = session.switch_notify.notified() => {
+                info!("[codexRemoteLauncher] Switch requested, returning to local");
+                return LoopResult::Switch;
             }
         };
 
@@ -695,4 +796,14 @@ async fn codex_remote_launcher(
             return LoopResult::Exit;
         }
     }
+}
+
+/// Gracefully kill the codex child process and its descendants.
+async fn kill_child_gracefully(child: &mut tokio::process::Child) {
+    if let Some(pid) = child.id() {
+        let _ = hapir_infra::utils::process::kill_process_tree(pid, false).await;
+    } else {
+        let _ = child.kill().await;
+    }
+    let _ = child.wait().await;
 }

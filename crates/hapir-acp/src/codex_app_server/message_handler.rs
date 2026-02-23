@@ -11,10 +11,7 @@ fn as_str(v: &Value) -> &str {
 /// Strip provider-specific noise (url, cf-ray, request id, headers) from error messages.
 fn sanitize_error(raw: &str) -> String {
     // Cut at ", url:" — everything after is Cloudflare / provider metadata
-    let trimmed = raw
-        .find(", url:")
-        .map(|i| &raw[..i])
-        .unwrap_or(raw);
+    let trimmed = raw.find(", url:").map(|i| &raw[..i]).unwrap_or(raw);
 
     // Strip "unexpected status " prefix for cleaner display
     let cleaned = trimmed
@@ -110,24 +107,19 @@ impl CodexMessageHandler {
             "commandExecution" | "mcpToolCall" | "fileChange" => {
                 self.finalize_stream();
 
-                let id = item
-                    .get("id")
-                    .map(as_str)
-                    .unwrap_or("")
-                    .to_string();
+                let id = item.get("id").map(as_str).unwrap_or("").to_string();
 
                 let name = match item_type {
-                    "commandExecution" => {
-                        item.get("command")
-                            .and_then(|v| v.as_array())
-                            .map(|arr| {
-                                arr.iter()
-                                    .filter_map(|v| v.as_str())
-                                    .collect::<Vec<_>>()
-                                    .join(" ")
-                            })
-                            .unwrap_or_else(|| "command".to_string())
-                    }
+                    "commandExecution" => item
+                        .get("command")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|v| v.as_str())
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        })
+                        .unwrap_or_else(|| "command".to_string()),
                     "mcpToolCall" => {
                         let tool = item.get("tool").map(as_str).unwrap_or("mcp_tool");
                         let server = item.get("server").map(as_str).unwrap_or("");
@@ -177,11 +169,7 @@ impl CodexMessageHandler {
 
         match item_type {
             "commandExecution" | "mcpToolCall" | "fileChange" => {
-                let id = item
-                    .get("id")
-                    .map(as_str)
-                    .unwrap_or("")
-                    .to_string();
+                let id = item.get("id").map(as_str).unwrap_or("").to_string();
 
                 if let Some(info) = self.tool_calls.get(&id) {
                     (self.on_message)(AgentMessage::ToolCall {
@@ -206,11 +194,7 @@ impl CodexMessageHandler {
                     _ => ToolResultStatus::Completed,
                 };
 
-                (self.on_message)(AgentMessage::ToolResult {
-                    id,
-                    output,
-                    status,
-                });
+                (self.on_message)(AgentMessage::ToolResult { id, output, status });
             }
             "agentMessage" => {
                 self.finalize_stream();

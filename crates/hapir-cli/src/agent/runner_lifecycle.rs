@@ -3,9 +3,8 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 use tracing::debug;
-
+use hapir_infra::utils::terminal::restore_terminal_state;
 use hapir_infra::ws::session_client::WsSessionClient;
-use crate::terminal_utils::restore_terminal_state;
 
 type AsyncClosureFn =
     dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync;

@@ -104,9 +104,7 @@ pub async fn claude_remote_launcher(session: &Arc<ClaudeSession<EnhancedMode>>) 
 
         // If the mode hash changed (e.g. model or permission mode switch),
         // kill the existing process so it gets re-spawned with new parameters.
-        let mode_changed = current_mode_hash
-            .as_ref()
-            .is_some_and(|h| *h != batch.hash);
+        let mode_changed = current_mode_hash.as_ref().is_some_and(|h| *h != batch.hash);
         if mode_changed && query_handle.is_some() {
             info!(
                 "[claudeRemoteLauncher] Mode changed ({} -> {}), restarting process",

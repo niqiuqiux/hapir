@@ -22,7 +22,7 @@ use crate::modules::claude::session::ClaudeSession;
 use hapir_infra::config::Configuration;
 use hapir_infra::handlers::uploads;
 use hapir_infra::utils::message_queue::MessageQueue2;
-use crate::terminal_utils::{restore_terminal_state, save_terminal_state};
+use hapir_infra::utils::terminal::{restore_terminal_state, save_terminal_state};
 
 /// Options for starting a Claude session.
 #[derive(Debug, Clone, Default)]
@@ -318,7 +318,9 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
                 // queued message gets consumed by the remote launcher.
                 let is_local = *session_mode.lock().unwrap() == SessionMode::Local;
                 if is_local {
-                    info!("[runClaude] Local mode: web message received, requesting switch to remote");
+                    info!(
+                        "[runClaude] Local mode: web message received, requesting switch to remote"
+                    );
                     switch_notify.notify_one();
                 }
 
@@ -612,4 +614,3 @@ fn write_hook_settings(session_id: &str, hook_port: u16, hook_token: &str) -> St
     }
     hook_settings_path
 }
-

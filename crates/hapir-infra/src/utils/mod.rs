@@ -5,4 +5,5 @@ pub mod message_queue;
 pub mod process;
 pub mod pushable_stream;
 pub mod shell;
+pub mod terminal;
 pub mod time;

@@ -187,8 +187,6 @@ pub struct AgentState {
     pub completed_requests: Option<HashMap<String, AgentStateCompletedRequest>>,
 }
 
-// --- Todo ---
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]

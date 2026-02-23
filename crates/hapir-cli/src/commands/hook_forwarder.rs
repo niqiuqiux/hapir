@@ -1,5 +1,5 @@
-use std::time::Duration;
 use anyhow::Result;
+use std::time::Duration;
 use tracing::debug;
 
 /// Run the session hook forwarder (internal command).

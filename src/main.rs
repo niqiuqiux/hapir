@@ -6,6 +6,7 @@ use hapir_cli::commands::claude::ClaudeArgs;
 use hapir_cli::commands::codex::CodexArgs;
 use hapir_cli::commands::gemini::GeminiArgs;
 use hapir_cli::commands::opencode::OpencodeArgs;
+use hapir_infra::utils::terminal::is_logging_suppressed;
 
 /// A writer that routes to stderr or sink based on the logging suppression flag.
 /// Used to silence hapir's own logs while a local agent process owns the terminal.
@@ -36,7 +37,7 @@ impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for ConditionalWriterFactory {
     type Writer = ConditionalWriter;
 
     fn make_writer(&'a self) -> Self::Writer {
-        if hapir_cli::terminal_utils::is_logging_suppressed() {
+        if is_logging_suppressed() {
             ConditionalWriter::Sink(std::io::sink())
         } else {
             ConditionalWriter::Stderr(std::io::stderr())

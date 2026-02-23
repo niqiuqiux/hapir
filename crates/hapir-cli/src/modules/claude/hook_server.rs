@@ -5,6 +5,7 @@ use axum::Router;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::post;
+use rand::Rng;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tracing::debug;
@@ -57,8 +58,7 @@ pub async fn start_hook_server(
     session_mode: Arc<Mutex<SessionMode>>,
 ) -> anyhow::Result<HookServer> {
     let hook_token = token.unwrap_or_else(|| {
-        use rand::RngCore;
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut bytes = [0u8; 16];
         rng.fill_bytes(&mut bytes);
         hex::encode(bytes)
@@ -174,10 +174,7 @@ async fn handle_event(
             // already emits a User message that the remote launcher forwards.
             if is_local {
                 if let Some(ref ws) = state.ws_client {
-                    let prompt = data
-                        .get("prompt")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
+                    let prompt = data.get("prompt").and_then(|v| v.as_str()).unwrap_or("");
                     if !prompt.is_empty() {
                         ws.send_message(serde_json::json!({
                             "role": "user",

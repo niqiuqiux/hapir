@@ -18,10 +18,11 @@ dirs-next = "2"
 uuid = { version = "1", features = ["v4"] }
 atty = "0.2"
 sha2 = "0.10"
+chrono = { workspace = true }
 hex = "0.4"
-portable-pty = "0.8"
+portable-pty = "0.9"
 axum = "0.8"
-rand = "0.8"
+rand = "0.10"
 reqwest = { version = "0.13.2", default-features = false, features = ["json", "rustls"] }
 
 [target.'cfg(unix)'.dependencies]

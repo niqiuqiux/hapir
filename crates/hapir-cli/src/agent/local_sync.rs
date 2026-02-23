@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::Value;
+use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tracing::debug;
 
@@ -28,13 +29,12 @@ impl LocalSyncDriver {
     /// Start the sync driver. Spawns a tokio task that periodically calls
     /// `scanner.scan()` and sends each returned value via `ws_client.send_message()`.
     pub fn start<S: LocalSessionScanner>(
-        scanner: tokio::sync::Mutex<S>,
+        scanner: Arc<Mutex<S>>,
         ws_client: Arc<WsSessionClient>,
         interval: Duration,
         log_tag: &str,
     ) -> Self {
         let tag = log_tag.to_string();
-        let scanner = std::sync::Arc::new(scanner);
 
         let handle = tokio::spawn(async move {
             let mut ticker = tokio::time::interval(interval);
@@ -67,7 +67,7 @@ impl LocalSyncDriver {
 
     /// Do a final scan to capture any remaining messages, then cleanup.
     pub async fn final_flush<S: LocalSessionScanner>(
-        scanner: &tokio::sync::Mutex<S>,
+        scanner: &Mutex<S>,
         ws_client: &WsSessionClient,
         log_tag: &str,
     ) {

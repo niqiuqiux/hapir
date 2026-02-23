@@ -16,9 +16,9 @@ use config::Configuration;
 use store::Store;
 use sync::SyncEngine;
 use web::AppState;
+use ws::WsState;
 use ws::connection_manager::ConnectionManager;
 use ws::terminal_registry::TerminalRegistry;
-use ws::WsState;
 
 pub async fn run_hub() -> anyhow::Result<()> {
     // Load configuration
@@ -217,7 +217,7 @@ async fn shutdown_signal() {
 
     #[cfg(unix)]
     let terminate = async {
-        use tokio::signal::unix::{signal, SignalKind};
+        use tokio::signal::unix::{SignalKind, signal};
         signal(SignalKind::terminate())
             .expect("failed to install SIGTERM handler")
             .recv()

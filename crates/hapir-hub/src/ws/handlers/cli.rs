@@ -471,7 +471,14 @@ async fn handle_session_alive(
         .and_then(|v| serde_json::from_value(v.clone()).ok());
 
     sync_engine
-        .handle_session_alive(&sid, time, thinking, thinking_status, permission_mode, model_mode)
+        .handle_session_alive(
+            &sid,
+            time,
+            thinking,
+            thinking_status,
+            permission_mode,
+            model_mode,
+        )
         .await;
 }
 

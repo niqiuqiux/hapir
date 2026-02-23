@@ -3,9 +3,9 @@ use clap::Parser;
 use tracing::{debug, error};
 
 use crate::commands::common;
-use hapir_infra::config::Configuration;
 use crate::modules::claude::run::{StartOptions, run_claude};
 use crate::modules::claude::version_check::check_claude_version;
+use hapir_infra::config::Configuration;
 
 /// Run the default (claude) command.
 ///

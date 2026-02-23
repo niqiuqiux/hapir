@@ -1,11 +1,11 @@
 use std::process::Stdio;
 
+use super::types::{PermissionResult, QueryOptions, SdkMessage};
+use hapir_infra::utils::process::kill_process_tree;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{Mutex, mpsc};
 use tracing::debug;
-use hapir_infra::utils::process::kill_process_tree;
-use super::types::{PermissionResult, QueryOptions, SdkMessage};
 
 /// A running Claude query that yields SDK messages (--print mode).
 pub struct Query {

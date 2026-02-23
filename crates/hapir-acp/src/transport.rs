@@ -55,7 +55,11 @@ pub struct AcpStdioTransport {
 
 impl AcpStdioTransport {
     /// Spawn a child process and wire up the JSON-RPC transport.
-    pub fn new(command: &str, args: &[String], env: Option<HashMap<String, String>>) -> Result<Arc<Self>, String> {
+    pub fn new(
+        command: &str,
+        args: &[String],
+        env: Option<HashMap<String, String>>,
+    ) -> Result<Arc<Self>, String> {
         let mut cmd = Command::new(command);
         cmd.args(args)
             .stdin(Stdio::piped())
@@ -67,7 +71,9 @@ impl AcpStdioTransport {
             cmd.envs(env_map);
         }
 
-        let mut child = cmd.spawn().map_err(|e| format!("failed to spawn '{}': {}", command, e))?;
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("failed to spawn '{}': {}", command, e))?;
 
         let child_stdout = child.stdout.take().expect("child stdout");
         let child_stdin = child.stdin.take().expect("child stdin");
@@ -374,5 +380,4 @@ impl AcpStdioTransport {
             let _ = p.resolve.send(Err(message.to_string()));
         }
     }
-
 }

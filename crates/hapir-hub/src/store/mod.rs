@@ -60,7 +60,8 @@ impl Store {
             use std::os::unix::fs::PermissionsExt;
             for suffix in &["", "-wal", "-shm"] {
                 let file_path = format!("{path}{suffix}");
-                let _ = std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(0o600));
+                let _ =
+                    std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(0o600));
             }
         }
 

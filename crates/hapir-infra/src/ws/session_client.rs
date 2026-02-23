@@ -120,7 +120,13 @@ impl WsSessionClient {
     }
 
     /// Send keep-alive.
-    pub async fn keep_alive(&self, thinking: bool, thinking_status: Option<&str>, mode: &str, runtime: &str) {
+    pub async fn keep_alive(
+        &self,
+        thinking: bool,
+        thinking_status: Option<&str>,
+        mode: &str,
+        runtime: &str,
+    ) {
         let time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
