@@ -24,7 +24,7 @@ Claude Code / Codex / Gemini / OpenCode 的控制台，随时随地 vibe coding�
 
 ## 架构
 
-Rust 工作区，包含三个 crate：
+Rust 工作区，包含六个 crate 和一个根二进制：
 
 ```
 hapir/
@@ -32,13 +32,19 @@ hapir/
 ├── crates/
 │   ├── hapir-shared/        # 协议与共享类型
 │   ├── hapir-hub/           # Axum 服务端
-│   └── hapir-cli/           # CLI 客户端
+│   ├── hapir-cli/           # CLI 客户端
+│   ├── hapir-infra/         # 共享基础设施（WS 客户端、RPC、处理器）
+│   ├── hapir-runner/        # 后台 Runner 进程
+│   └── hapir-acp/           # Agent 协议后端（ACP、Codex App Server）
 └── web/                     # React + Vite + TypeScript 前端
 ```
 
 - **hapir-shared** — WebSocket 协议、领域类型、国际化
 - **hapir-hub** — 中心服务器，包含 SyncEngine、SQLite 持久化、SSE、WebSocket 房间
-- **hapir-cli** — 代理编排、本地/远程循环、RPC 处理器
+- **hapir-cli** — 代理编排、本地/远程循环、会话管理
+- **hapir-infra** — CLI 和 Runner 共用的基础设施：自动重连的 WebSocket 客户端、RPC 处理器（bash、文件、git、ripgrep 等）、持久化、认证
+- **hapir-runner** — 后台 Runner 进程，负责机器注册、WebSocket 连接管理和 git worktree 管理
+- **hapir-acp** — 独立的 Agent 协议后端：ACP SDK、Codex App Server、JSON-RPC 2.0 stdio 传输
 
 前端是 React 19 + Vite + Tailwind CSS 的 PWA 应用。TypeScript 类型通过 `ts-rs` 从 Rust schema 自动生成。
 
@@ -68,26 +74,27 @@ cd web && bun install && bun run build
 启动 hub 服务器：
 
 ```bash
-hapi hub
+hapir hub
 ```
 
 运行 AI 代理会话（默认为 Claude）：
 
 ```bash
-hapi              # Claude（默认）
-hapi claude
-hapi codex
-hapi gemini
-hapi opencode
+hapir              # Claude（默认）
+hapir claude
+hapir codex
+hapir gemini
+hapir opencode
 ```
 
 其他命令：
 
 ```bash
-hapi auth login   # 保存 API token
-hapi auth status  # 查看当前配置
-hapi runner start # 启动后台 runner
-hapi doctor       # 显示诊断信息
+hapir auth login   # 保存 API token
+hapir auth status  # 查看当前配置
+hapir runner start # 启动后台 runner
+hapir mcp          # 运行 MCP stdio 桥接
+hapir doctor       # 显示诊断信息
 ```
 
 ## 环境变量

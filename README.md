@@ -24,7 +24,7 @@ Run AI coding sessions and control them remotely through Web / PWA / Telegram Mi
 
 ## Architecture
 
-Rust workspace with three crates:
+Rust workspace with six crates plus a root binary:
 
 ```
 hapir/
@@ -32,13 +32,19 @@ hapir/
 ├── crates/
 │   ├── hapir-shared/        # Protocol & shared types
 │   ├── hapir-hub/           # Axum server
-│   └── hapir-cli/           # CLI client
+│   ├── hapir-cli/           # CLI client
+│   ├── hapir-infra/         # Shared infrastructure (WS client, RPC, handlers)
+│   ├── hapir-runner/        # Background runner process
+│   └── hapir-acp/           # Agent protocol backends (ACP, Codex App Server)
 └── web/                     # React + Vite + TypeScript frontend
 ```
 
 - **hapir-shared** — WebSocket protocol, domain types, i18n
 - **hapir-hub** — Central server with SyncEngine, SQLite persistence, SSE, WebSocket rooms
-- **hapir-cli** — Agent orchestration, local/remote loop, RPC handlers
+- **hapir-cli** — Agent orchestration, local/remote loop, session management
+- **hapir-infra** — Shared infrastructure used by CLI and runner: WebSocket client with auto-reconnect, RPC handlers (bash, files, git, ripgrep, etc.), persistence, auth
+- **hapir-runner** — Background runner process for machine registration, WS connection management, and git worktree management
+- **hapir-acp** — Standalone agent protocol backends: ACP SDK, Codex App Server, JSON-RPC 2.0 stdio transport
 
 The frontend is a React 19 + Vite + Tailwind CSS PWA. TypeScript types are auto-generated from Rust schemas via `ts-rs`.
 
@@ -68,26 +74,27 @@ cd web && bun install && bun run build
 Start the hub server:
 
 ```bash
-hapi hub
+hapir hub
 ```
 
 Run an AI agent session (Claude is the default):
 
 ```bash
-hapi              # Claude (default)
-hapi claude
-hapi codex
-hapi gemini
-hapi opencode
+hapir              # Claude (default)
+hapir claude
+hapir codex
+hapir gemini
+hapir opencode
 ```
 
 Other commands:
 
 ```bash
-hapi auth login   # Save API token
-hapi auth status  # Show current config
-hapi runner start # Start background runner
-hapi doctor       # Show diagnostics
+hapir auth login   # Save API token
+hapir auth status  # Show current config
+hapir runner start # Start background runner
+hapir mcp          # Run MCP stdio bridge
+hapir doctor       # Show diagnostics
 ```
 
 ## Environment Variables
