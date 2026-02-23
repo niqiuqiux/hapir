@@ -1,4 +1,5 @@
 pub mod agent_state;
+pub mod cli_api;
 pub mod message;
 pub mod metadata;
 pub mod session;

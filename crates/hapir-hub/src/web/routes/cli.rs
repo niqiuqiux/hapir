@@ -4,8 +4,12 @@ use axum::{
     http::StatusCode,
     routing::{get, post},
 };
-use serde::Deserialize;
 use serde_json::{Value, json};
+
+use hapir_shared::schemas::cli_api::{
+    CreateMachineRequest, CreateMachineResponse, CreateSessionRequest, CreateSessionResponse,
+    ListMessagesQuery, ListMessagesResponse,
+};
 
 use crate::web::AppState;
 use crate::web::middleware::cli_auth::CliAuthContext;
@@ -19,39 +23,12 @@ pub fn router() -> Router<AppState> {
         .route("/machines/{id}", get(get_machine))
 }
 
-// --- Request types ---
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CreateSessionBody {
-    tag: String,
-    metadata: Value,
-    agent_state: Option<Value>,
-    namespace: Option<String>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ListMessagesQuery {
-    after_seq: i64,
-    limit: Option<i64>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CreateMachineBody {
-    id: String,
-    metadata: Value,
-    runner_state: Option<Value>,
-    namespace: Option<String>,
-}
-
 // --- Handlers ---
 
 async fn create_session(
     State(state): State<AppState>,
     Extension(auth): Extension<CliAuthContext>,
-    Json(body): Json<CreateSessionBody>,
+    Json(body): Json<CreateSessionRequest>,
 ) -> (StatusCode, Json<Value>) {
     let namespace = body.namespace.as_deref().unwrap_or(&auth.namespace);
 
@@ -65,7 +42,10 @@ async fn create_session(
         )
         .await
     {
-        Ok(session) => (StatusCode::OK, Json(json!({ "session": session }))),
+        Ok(session) => (
+                StatusCode::OK,
+                Json(serde_json::to_value(CreateSessionResponse { session }).unwrap()),
+            ),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({"error": e.to_string()})),
@@ -83,7 +63,10 @@ async fn get_session(
         .resolve_session_access(&id, &auth.namespace)
         .await
     {
-        Ok((_session_id, session)) => (StatusCode::OK, Json(json!({ "session": session }))),
+        Ok((_session_id, session)) => (
+            StatusCode::OK,
+            Json(serde_json::to_value(CreateSessionResponse { session }).unwrap()),
+        ),
         Err("access-denied") => (
             StatusCode::FORBIDDEN,
             Json(json!({"error": "Session access denied"})),
@@ -127,13 +110,16 @@ async fn list_messages(
             .sync_engine
             .get_messages_after(&resolved_session_id, query.after_seq, limit);
 
-    (StatusCode::OK, Json(json!({ "messages": messages })))
+    (
+        StatusCode::OK,
+        Json(serde_json::to_value(ListMessagesResponse { messages }).unwrap()),
+    )
 }
 
 async fn create_machine(
     State(state): State<AppState>,
     Extension(auth): Extension<CliAuthContext>,
-    Json(body): Json<CreateMachineBody>,
+    Json(body): Json<CreateMachineRequest>,
 ) -> (StatusCode, Json<Value>) {
     let namespace = body.namespace.as_deref().unwrap_or(&auth.namespace);
 
@@ -157,7 +143,12 @@ async fn create_machine(
         )
         .await
     {
-        Ok(machine) => (StatusCode::OK, Json(json!({ "machine": machine }))),
+        Ok(machine) => (
+                StatusCode::OK,
+                Json(serde_json::to_value(CreateMachineResponse {
+                    machine: serde_json::to_value(machine).unwrap(),
+                }).unwrap()),
+            ),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({"error": e.to_string()})),

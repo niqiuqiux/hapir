@@ -1,29 +1,29 @@
 use anyhow::{Result, bail};
-use serde::Deserialize;
+use std::time::Duration;
 use tracing::warn;
 
+use hapir_shared::schemas::cli_api::{
+    CreateMachineRequest, CreateMachineResponse, CreateSessionRequest, CreateSessionResponse,
+    ListMessagesResponse,
+};
 use hapir_shared::schemas::{Metadata, Session};
 
 use crate::config::Configuration;
 
-/// HTTP API client for the HAPIR hub.
+/// CLI/Runner 侧的 Hub HTTP API 客户端。
+///
+/// 所有请求走 `/cli/*` 路由，使用 `CLI_API_TOKEN` 做 Bearer 认证。
+/// 主要用于 WebSocket 连接建立之前的资源初始化（注册机器、创建会话），
+/// 以及不需要实时通道的一次性查询操作（拉取历史消息等）。
+/// 实时交互（消息流、状态同步、RPC）在资源创建完成后由 `WsSessionClient` 接管。
 pub struct ApiClient {
     http: reqwest::Client,
     base_url: String,
     token: String,
 }
 
-#[derive(Deserialize)]
-struct SessionResponse {
-    session: Session,
-}
-
-#[derive(Deserialize)]
-struct MachineResponse {
-    machine: serde_json::Value,
-}
-
 impl ApiClient {
+    /// 从配置构造客户端，要求 `cli_api_token` 非空。
     pub fn new(config: &Configuration) -> Result<Self> {
         if config.cli_api_token.is_empty() {
             bail!(
@@ -32,24 +32,27 @@ impl ApiClient {
         }
         Ok(Self {
             http: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(60))
+                .timeout(Duration::from_secs(60))
                 .build()?,
             base_url: config.api_url.clone(),
             token: config.cli_api_token.clone(),
         })
     }
 
+    /// 在 Hub 上创建或获取会话（`POST /cli/sessions`）。
+    /// 这是 bootstrap 流程的核心步骤：拿到 `Session` 后才能用其 `id` 构造 `WsSessionClient`。
     pub async fn get_or_create_session(
         &self,
         tag: &str,
         metadata: &Metadata,
         agent_state: Option<&serde_json::Value>,
     ) -> Result<Session> {
-        let body = serde_json::json!({
-            "tag": tag,
-            "metadata": metadata,
-            "agentState": agent_state,
-        });
+        let body = CreateSessionRequest {
+            tag: tag.to_string(),
+            metadata: serde_json::to_value(metadata)?,
+            agent_state: agent_state.cloned(),
+            namespace: None,
+        };
 
         let resp = self
             .http
@@ -65,21 +68,24 @@ impl ApiClient {
             bail!("POST /cli/sessions failed ({status}): {text}");
         }
 
-        let parsed: SessionResponse = resp.json().await?;
+        let parsed: CreateSessionResponse = resp.json().await?;
         Ok(parsed.session)
     }
 
+    /// 在 Hub 上注册或确认机器（`POST /cli/machines`）。
+    /// 在 bootstrap 流程中先于会话创建调用，确保 Hub 知道当前机器的存在和元数据。
     pub async fn get_or_create_machine(
         &self,
         machine_id: &str,
         metadata: &serde_json::Value,
         runner_state: Option<&serde_json::Value>,
     ) -> Result<serde_json::Value> {
-        let body = serde_json::json!({
-            "id": machine_id,
-            "metadata": metadata,
-            "runnerState": runner_state,
-        });
+        let body = CreateMachineRequest {
+            id: machine_id.to_string(),
+            metadata: metadata.clone(),
+            runner_state: runner_state.cloned(),
+            namespace: None,
+        };
 
         let resp = self
             .http
@@ -95,16 +101,18 @@ impl ApiClient {
             bail!("POST /cli/machines failed ({status}): {text}");
         }
 
-        let parsed: MachineResponse = resp.json().await?;
+        let parsed: CreateMachineResponse = resp.json().await?;
         Ok(parsed.machine)
     }
 
+    /// 拉取会话的历史消息（`GET /cli/sessions/{id}/messages`），按 seq 游标分页。
+    #[deprecated]
     pub async fn get_messages(
         &self,
         session_id: &str,
         after_seq: i64,
         limit: i64,
-    ) -> Result<Vec<serde_json::Value>> {
+    ) -> Result<Vec<hapir_shared::schemas::DecryptedMessage>> {
         let resp = self
             .http
             .get(format!(
@@ -121,15 +129,12 @@ impl ApiClient {
             bail!("GET messages failed ({status}): {text}");
         }
 
-        #[derive(Deserialize)]
-        struct MessagesResponse {
-            messages: Vec<serde_json::Value>,
-        }
-
-        let parsed: MessagesResponse = resp.json().await?;
+        let parsed: ListMessagesResponse = resp.json().await?;
         Ok(parsed.messages)
     }
 
+    /// 向会话发送消息（`POST /cli/sessions/{id}/messages`）。
+    #[deprecated]
     pub async fn send_message(
         &self,
         session_id: &str,
@@ -163,10 +168,12 @@ impl ApiClient {
         Ok(())
     }
 
+    /// Hub 的基础 URL，也用于构造 WebSocket 连接地址。
     pub fn base_url(&self) -> &str {
         &self.base_url
     }
 
+    /// CLI API Token，同时作为 WebSocket 连接的认证凭据。
     pub fn token(&self) -> &str {
         &self.token
     }
