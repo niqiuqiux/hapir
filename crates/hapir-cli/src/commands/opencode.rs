@@ -35,5 +35,5 @@ pub async fn run(args: OpencodeArgs) -> Result<()> {
 
     let working_directory = std::env::current_dir()?.to_string_lossy().to_string();
 
-    crate::modules::opencode::run(&working_directory, runner_port).await
+    crate::modules::opencode::run::run(&working_directory, runner_port).await
 }

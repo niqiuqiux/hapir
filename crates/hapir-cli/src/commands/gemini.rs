@@ -35,5 +35,5 @@ pub async fn run(args: GeminiArgs) -> Result<()> {
 
     let working_directory = std::env::current_dir()?.to_string_lossy().to_string();
 
-    crate::modules::gemini::run(&working_directory, runner_port).await
+    crate::modules::gemini::run::run(&working_directory, runner_port).await
 }

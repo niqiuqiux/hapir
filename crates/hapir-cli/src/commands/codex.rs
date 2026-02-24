@@ -38,7 +38,7 @@ pub async fn run(args: CodexArgs) -> Result<()> {
 
     let working_directory = std::env::current_dir()?.to_string_lossy().to_string();
 
-    crate::modules::codex::run(
+    crate::modules::codex::run::run(
         &working_directory,
         runner_port,
         args.started_by.as_deref(),

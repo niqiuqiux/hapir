@@ -1,9 +1,9 @@
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
-use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
 
@@ -11,12 +11,12 @@ use hapir_shared::schemas::SessionStartedBy;
 
 use super::local_launcher::claude_local_launcher;
 use super::remote_launcher::claude_remote_launcher;
-use crate::agent::loop_base::{LoopOptions, run_local_remote_session};
+use crate::agent::loop_base::{run_local_remote_session, LoopOptions};
 use crate::agent::runner_lifecycle::{
-    RunnerLifecycle, RunnerLifecycleOptions, create_mode_change_handler, set_controlled_by_user,
+    create_mode_change_handler, set_controlled_by_user, RunnerLifecycle, RunnerLifecycleOptions,
 };
 use crate::agent::session_base::{AgentSessionBase, AgentSessionBaseOptions, SessionMode};
-use crate::agent::session_factory::{SessionBootstrapOptions, bootstrap_session};
+use crate::agent::session_factory::{bootstrap_session, SessionBootstrapOptions};
 use crate::modules::claude::hook_server::start_hook_server;
 use crate::modules::claude::session::ClaudeSession;
 use hapir_infra::config::CliConfiguration;
@@ -72,30 +72,6 @@ fn compute_mode_hash(mode: &EnhancedMode) -> String {
     hex::encode(hasher.finalize())
 }
 
-/// Map a string started_by value to the StartedBy enum.
-fn resolve_started_by(value: Option<&str>) -> SessionStartedBy {
-    match value {
-        Some("runner") => SessionStartedBy::Runner,
-        _ => SessionStartedBy::Terminal,
-    }
-}
-
-/// Determine the starting session mode from options.
-fn resolve_starting_mode(options: &StartOptions, started_by: SessionStartedBy) -> SessionMode {
-    if let Some(ref mode_str) = options.starting_mode {
-        match mode_str.as_str() {
-            "remote" => return SessionMode::Remote,
-            "local" => return SessionMode::Local,
-            _ => {}
-        }
-    }
-    // Default: local for terminal, remote for runner
-    match started_by {
-        SessionStartedBy::Terminal => SessionMode::Local,
-        SessionStartedBy::Runner => SessionMode::Remote,
-    }
-}
-
 /// Entry point for running a Claude agent session.
 ///
 /// Bootstraps the session, starts the hook server, creates the message
@@ -105,8 +81,24 @@ pub async fn run_claude(options: StartOptions) -> anyhow::Result<()> {
 
     save_terminal_state();
 
-    let started_by = resolve_started_by(options.started_by.as_deref());
-    let starting_mode = resolve_starting_mode(&options, started_by);
+    let started_by = match &options.started_by {
+        Some(from) if from == "runner" => SessionStartedBy::Runner,
+        _ => SessionStartedBy::Terminal,
+    };
+    let starting_mode = {
+        if let Some(ref mode_str) = options.starting_mode {
+            match mode_str.as_str() {
+                "remote" => SessionMode::Remote,
+                "local" => SessionMode::Local,
+                _ => panic!("Unsupported starting mode: {}", mode_str),
+            }
+        } else {
+            match started_by {
+                SessionStartedBy::Terminal => SessionMode::Local,
+                SessionStartedBy::Runner => SessionMode::Remote,
+            }
+        }
+    };
 
     debug!(
         "[runClaude] Starting in {} (startedBy={:?}, mode={:?})",

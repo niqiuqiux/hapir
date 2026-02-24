@@ -9,7 +9,7 @@ use tracing::debug;
 
 use crate::agent::local_sync::LocalSessionScanner;
 
-use super::codex_message;
+use super::run::codex_message;
 
 pub type SessionFoundCallback = Box<dyn Fn(&str) + Send + Sync>;
 
