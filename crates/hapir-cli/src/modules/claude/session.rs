@@ -20,7 +20,6 @@ pub struct ClaudeSession<Mode: Clone + Send + 'static> {
     pub claude_env_vars: Option<HashMap<String, String>>,
     pub claude_args: Mutex<Option<Vec<String>>>,
     pub mcp_servers: HashMap<String, Value>,
-    pub allowed_tools: Option<Vec<String>>,
     pub hook_settings_path: String,
     pub started_by: SessionStartedBy,
     pub starting_mode: SessionMode,

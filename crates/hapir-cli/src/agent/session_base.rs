@@ -8,7 +8,6 @@ use tracing::debug;
 
 use hapir_shared::modes::{ModelMode, PermissionMode, SessionMode};
 
-use hapir_infra::api::ApiClient;
 use hapir_infra::utils::message_queue::MessageQueue2;
 use hapir_infra::ws::session_client::WsSessionClient;
 use hapir_shared::schemas::HapirSessionMetadata;
@@ -22,7 +21,6 @@ pub type ApplySessionIdFn =
 
 /// Options for constructing an AgentSessionBase.
 pub struct AgentSessionBaseOptions<Mode: Clone + Send + 'static> {
-    pub api: Arc<ApiClient>,
     pub ws_client: Arc<WsSessionClient>,
     pub path: String,
     pub session_id: Option<String>,
@@ -44,7 +42,6 @@ pub struct AgentSessionBase<Mode: Clone + Send + 'static> {
     pub mode: Arc<Mutex<SessionMode>>,
     pub thinking: Arc<Mutex<bool>>,
     pub thinking_status: Arc<Mutex<Option<String>>>,
-    pub api: Arc<ApiClient>,
     pub ws_client: Arc<WsSessionClient>,
     pub queue: Arc<MessageQueue2<Mode>>,
 
@@ -68,7 +65,6 @@ impl<Mode: Clone + Send + 'static> AgentSessionBase<Mode> {
             mode: Arc::new(Mutex::new(opts.mode)),
             thinking: Arc::new(Mutex::new(false)),
             thinking_status: Arc::new(Mutex::new(None)),
-            api: opts.api,
             ws_client: opts.ws_client,
             queue: opts.queue,
             on_mode_change_cb: Arc::new(opts.on_mode_change_cb),

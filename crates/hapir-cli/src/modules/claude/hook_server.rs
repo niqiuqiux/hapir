@@ -1,17 +1,17 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use axum::Router;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::post;
+use axum::Router;
 use rand::Rng;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tracing::debug;
 
-use hapir_shared::modes::SessionMode;
 use hapir_infra::ws::session_client::WsSessionClient;
+use hapir_shared::modes::SessionMode;
 
 /// Data received from Claude's SessionStart hook.
 pub type SessionHookData = HashMap<String, serde_json::Value>;
@@ -52,17 +52,16 @@ struct AppState {
 /// - `POST /hook/event` for generic hook events (thinking state, etc.)
 pub async fn start_hook_server(
     on_session_hook: OnSessionHook,
-    token: Option<String>,
     on_thinking_change: Option<OnThinkingChange>,
     ws_client: Option<Arc<WsSessionClient>>,
     session_mode: Arc<Mutex<SessionMode>>,
 ) -> anyhow::Result<HookServer> {
-    let hook_token = token.unwrap_or_else(|| {
+    let hook_token = {
         let mut rng = rand::rng();
         let mut bytes = [0u8; 16];
         rng.fill_bytes(&mut bytes);
         hex::encode(bytes)
-    });
+    };
 
     let state = Arc::new(AppState {
         token: hook_token.clone(),

@@ -8,10 +8,7 @@ use hapir_shared::schemas::SessionStartedBy;
 
 use crate::agent::bootstrap::{AgentBootstrapConfig, bootstrap_agent};
 use crate::agent::cleanup::cleanup_agent_session;
-use crate::agent::common_rpc::{
-    register_acp_abort_rpc, register_kill_session_rpc, register_on_user_message_rpc,
-    register_set_session_config_rpc,
-};
+use crate::agent::common_rpc::{ApplyConfigFn, CommonRpc, OnKillFn};
 use crate::agent::local_launch_policy::{
     LocalLaunchContext, LocalLaunchExitReason, get_local_launch_exit_reason,
 };
@@ -256,7 +253,6 @@ pub async fn run_opencode(
 
     let on_mode_change = boot.lifecycle.create_mode_change_handler();
     let session_base = AgentSessionBase::new(AgentSessionBaseOptions {
-        api: boot.api.clone(),
         ws_client: ws_client.clone(),
         path: working_directory.clone(),
         session_id: None,
@@ -283,18 +279,11 @@ pub async fn run_opencode(
         None,
     ));
 
-    register_on_user_message_rpc(
-        &ws_client,
-        queue.clone(),
-        current_mode.clone(),
-        None,
-        None,
-        "runOpenCode",
-        None,
-    )
-    .await;
+    let rpc = CommonRpc::new(&ws_client, queue.clone(), "runOpenCode");
+    rpc.on_user_message(current_mode.clone(), None, None, None)
+        .await;
 
-    let apply_config: Arc<crate::agent::common_rpc::ApplyConfigFn<OpencodeMode>> =
+    let apply_config: Arc<ApplyConfigFn<OpencodeMode>> =
         Arc::new(Box::new(|m, params| {
             if let Some(pm) = params.get("permissionMode") {
                 if let Ok(mode) = serde_json::from_value::<PermissionMode>(pm.clone()) {
@@ -303,28 +292,21 @@ pub async fn run_opencode(
                 }
             }
         }));
-    register_set_session_config_rpc(
-        &ws_client,
-        current_mode.clone(),
-        apply_config,
-        "runOpenCode",
-    )
-    .await;
+    rpc.set_session_config(current_mode.clone(), apply_config)
+        .await;
 
     let backend_for_kill = backend.clone();
-    let on_kill: crate::agent::common_rpc::OnKillFn = Arc::new(move || {
+    let on_kill: OnKillFn = Arc::new(move || {
         let b = backend_for_kill.clone();
         Box::pin(async move {
             let _ = b.disconnect().await;
         })
     });
-    register_kill_session_rpc(&ws_client, queue.clone(), Some(on_kill), "runOpenCode").await;
+    rpc.kill_session(Some(on_kill)).await;
 
-    register_acp_abort_rpc(
-        &ws_client,
+    rpc.acp_abort(
         backend.clone() as Arc<dyn AgentBackend>,
         session_base.clone(),
-        "runOpenCode",
     )
     .await;
 

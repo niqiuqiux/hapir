@@ -1,8 +1,8 @@
-use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tracing::{debug, warn};
@@ -11,16 +11,14 @@ use hapir_shared::schemas::SessionStartedBy;
 
 use super::local_launcher::claude_local_launcher;
 use super::remote_launcher::claude_remote_launcher;
-use crate::agent::bootstrap::{AgentBootstrapConfig, bootstrap_agent};
+use crate::agent::bootstrap::{bootstrap_agent, AgentBootstrapConfig};
 use crate::agent::cleanup::cleanup_agent_session;
-use crate::agent::common_rpc::{
-    MessagePreProcessor, register_kill_session_rpc, register_on_user_message_rpc,
-    register_set_session_config_rpc, register_switch_rpc,
-};
-use crate::agent::loop_base::{LoopOptions, run_local_remote_session};
+use crate::agent::common_rpc::{ApplyConfigFn, CommonRpc, MessagePreProcessor};
+use crate::agent::loop_base::{run_local_remote_session, LoopOptions};
 use crate::agent::session_base::{AgentSessionBase, AgentSessionBaseOptions};
 use crate::modules::claude::hook_server::start_hook_server;
 use crate::modules::claude::session::ClaudeSession;
+use crate::terminal;
 use hapir_infra::config::CliConfiguration;
 use hapir_infra::handlers::uploads;
 use hapir_infra::utils::message_queue::MessageQueue2;
@@ -92,7 +90,6 @@ pub async fn run_claude(
     .await?;
 
     let ws_client = boot.ws_client.clone();
-    let api = boot.api.clone();
     let session_id = boot.session_id.clone();
 
     let initial_mode = ClaudeEnhancedMode {
@@ -112,7 +109,6 @@ pub async fn run_claude(
             base_on_mode_change(mode);
         });
     let session_base = AgentSessionBase::new(AgentSessionBaseOptions {
-        api: api.clone(),
         ws_client: ws_client.clone(),
         path: working_directory.clone(),
         session_id: None,
@@ -143,7 +139,6 @@ pub async fn run_claude(
                 sb.on_session_found(&claude_sid).await;
             });
         }),
-        None,
         Some(Arc::new(move |thinking| {
             let sb = sb_for_thinking.clone();
             tokio::spawn(async move {
@@ -166,7 +161,6 @@ pub async fn run_claude(
         claude_env_vars: options.claude_env_vars.clone(),
         claude_args: Mutex::new(options.claude_args.clone()),
         mcp_servers: HashMap::new(),
-        allowed_tools: None,
         hook_settings_path,
         started_by,
         starting_mode,
@@ -208,35 +202,32 @@ pub async fn run_claude(
         }
     }));
 
-    register_on_user_message_rpc(
-        &ws_client,
-        queue.clone(),
+    let rpc = CommonRpc::new(&ws_client, queue.clone(), "runClaude");
+    rpc.on_user_message(
         current_mode.clone(),
         Some(session_base.switch_notify.clone()),
         Some(hook_session_mode.clone()),
-        "runClaude",
         Some(pre_process),
     )
     .await;
 
-    let apply_config: Arc<crate::agent::common_rpc::ApplyConfigFn<ClaudeEnhancedMode>> =
-        Arc::new(Box::new(|m, params| {
-            if let Some(pm) = params.get("permissionMode") {
-                if let Ok(mode) = serde_json::from_value::<PermissionMode>(pm.clone()) {
-                    debug!("[runClaude] Permission mode changed to: {:?}", mode);
-                    m.permission_mode = Some(mode);
-                }
+    let apply_config: Arc<ApplyConfigFn<ClaudeEnhancedMode>> = Arc::new(Box::new(|m, params| {
+        if let Some(pm) = params.get("permissionMode") {
+            if let Ok(mode) = serde_json::from_value::<PermissionMode>(pm.clone()) {
+                debug!("[runClaude] Permission mode changed to: {:?}", mode);
+                m.permission_mode = Some(mode);
             }
-            if let Some(mm) = params.get("modelMode").and_then(|v| v.as_str()) {
-                debug!("[runClaude] Model mode changed to: {}", mm);
-                m.model = Some(mm.to_string());
-            }
-        }));
-    register_set_session_config_rpc(&ws_client, current_mode.clone(), apply_config, "runClaude")
+        }
+        if let Some(mm) = params.get("modelMode").and_then(|v| v.as_str()) {
+            debug!("[runClaude] Model mode changed to: {}", mm);
+            m.model = Some(mm.to_string());
+        }
+    }));
+    rpc.set_session_config(current_mode.clone(), apply_config)
         .await;
 
-    register_kill_session_rpc(&ws_client, queue.clone(), None, "runClaude").await;
-    register_switch_rpc(&ws_client, session_base.switch_notify.clone(), "runClaude").await;
+    rpc.kill_session(None).await;
+    rpc.switch(session_base.switch_notify.clone()).await;
 
     // Permission responses are delivered via oneshot channels from pending_permissions
     let cs_for_permission = claude_session.clone();
@@ -329,8 +320,7 @@ pub async fn run_claude(
         })
         .await;
 
-    let terminal_mgr =
-        crate::terminal::setup_terminal(&ws_client, &session_id, &working_directory).await;
+    let terminal_mgr = terminal::setup_terminal(&ws_client, &session_id, &working_directory).await;
 
     let _ = ws_client.connect(Duration::from_secs(10)).await;
 
