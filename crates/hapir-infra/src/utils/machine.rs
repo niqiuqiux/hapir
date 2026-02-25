@@ -18,8 +18,7 @@ pub fn gethostname() -> OsString {
     #[cfg(windows)]
     {
         use std::os::windows::ffi::OsStringExt;
-        // ComputerNameDnsHostname = 1
-        let format = 1u32;
+        let format = windows_sys::Win32::System::SystemInformation::ComputerNameDnsHostname;
         let mut size: u32 = 0;
         unsafe {
             windows_sys::Win32::System::SystemInformation::GetComputerNameExW(

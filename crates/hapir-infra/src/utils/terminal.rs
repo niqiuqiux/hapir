@@ -1,6 +1,8 @@
 use std::io::{Write, stdout};
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
+
+#[cfg(unix)]
+use std::sync::OnceLock;
 
 static LOGGING_SUPPRESSED: AtomicBool = AtomicBool::new(false);
 

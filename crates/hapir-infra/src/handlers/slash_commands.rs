@@ -1,6 +1,5 @@
 use std::path::{Path, PathBuf};
 
-use hapir_shared::rpc::skills::RpcListSkillsResponse;
 use hapir_shared::rpc::slash_commands::{
     RpcListSlashCommandsRequest, RpcListSlashCommandsResponse, RpcSlashCommand,
 };

@@ -194,7 +194,7 @@ async fn wait_for_reclaim_keypress(notify: &Notify) {
 
         if pressed {
             info!("[loop] Space pressed, requesting switch to local");
-            terminal_utils::show_reclaiming_prompt();
+            show_reclaiming_prompt();
             notify.notify_one();
         }
     }

@@ -1,11 +1,15 @@
 /// Re-export from persistence for convenience.
 pub use crate::persistence::is_process_alive;
 use anyhow::{Context, Result};
+#[cfg(unix)]
 use procfs::process::Process as ProcfsProcess;
+#[cfg(unix)]
 use std::collections::HashSet;
 use std::env::current_exe;
 use std::process::{Command, Stdio};
+#[cfg(unix)]
 use std::time::Duration;
+#[cfg(unix)]
 use tokio::time::sleep;
 use tracing::debug;
 
@@ -38,12 +42,13 @@ pub async fn kill_process(pid: u32, force: bool) -> Result<bool> {
         if force {
             cmd.arg("/F");
         }
-        match cmd.output() {
+        return match cmd.output() {
             Ok(output) => Ok(output.status.success()),
             Err(_) => Ok(false),
-        }
+        };
     }
 
+    #[cfg(not(any(unix, windows)))]
     panic!("unsupported platform");
 }
 
@@ -132,6 +137,7 @@ pub async fn kill_process_tree(pid: u32, force: bool) -> Result<()> {
         return Ok(());
     }
 
+    #[cfg(not(any(unix, windows)))]
     panic!("unsupported platform");
 }
 
