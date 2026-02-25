@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use tokio::select;
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, info, warn};
 
 use hapir_shared::session::{AgentContent, FlatMessage, RoleWrappedMessage};
@@ -212,7 +212,7 @@ pub async fn codex_remote_launcher(
 
         session.on_thinking_change(true).await;
 
-        let (msg_tx, mut msg_rx) = tokio::sync::mpsc::unbounded_channel::<AgentMessage>();
+        let (msg_tx, mut msg_rx) = mpsc::unbounded_channel::<AgentMessage>();
         let ws_for_consumer = session.ws_client.clone();
         let ts_for_consumer = session.thinking_status.clone();
         let consumer = tokio::spawn(async move {

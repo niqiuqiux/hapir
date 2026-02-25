@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::time::Duration;
-
+use tokio::process::Command;
 use tokio::select;
 use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
@@ -14,7 +14,6 @@ use crate::agent::local_launch_policy::{
 use crate::agent::local_sync::LocalSyncDriver;
 use crate::agent::loop_base::LoopResult;
 use crate::agent::session_base::AgentSessionBase;
-use hapir_infra::utils::terminal::restore_terminal_state;
 
 use super::CodexMode;
 use super::session_scanner::CodexSessionScanner;
@@ -44,7 +43,7 @@ pub async fn codex_local_launcher(session: &Arc<AgentSessionBase<CodexMode>>) ->
         "codexLocalSync",
     );
 
-    let mut cmd = tokio::process::Command::new("codex");
+    let mut cmd = Command::new("codex");
     if let Some(ref sid) = *session.session_id.lock().await {
         cmd.arg("resume").arg(sid);
     }
@@ -83,8 +82,6 @@ pub async fn codex_local_launcher(session: &Arc<AgentSessionBase<CodexMode>>) ->
 
     sync_driver.stop();
     LocalSyncDriver::final_flush(&scanner, &session.ws_client, "codexLocalSync").await;
-
-    restore_terminal_state();
 
     if switched {
         return LoopResult::Switch;

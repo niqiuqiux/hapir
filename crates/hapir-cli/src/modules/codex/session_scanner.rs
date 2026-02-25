@@ -317,7 +317,13 @@ fn convert_event(line: &Value) -> Option<Value> {
 
 fn normalize_path(p: &str) -> String {
     let path = PathBuf::from(p);
-    path.to_string_lossy().trim_end_matches('/').to_string()
+    let normalized = path.to_string_lossy().replace('\\', "/");
+    let trimmed = normalized.trim_end_matches('/');
+    if cfg!(windows) {
+        trimmed.to_lowercase()
+    } else {
+        trimmed.to_string()
+    }
 }
 
 fn parse_iso_timestamp_ms(ts: &str) -> Option<u64> {
